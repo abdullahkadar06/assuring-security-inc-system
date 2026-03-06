@@ -3,6 +3,7 @@ import cors from "cors";
 import { env } from "./config/env.js";
 import { pool } from "./db/pool.js";
 
+// Routes
 import authRoutes from "./routes/auth.routes.js";
 import usersRoutes from "./routes/users.routes.js";
 import shiftsRoutes from "./routes/shifts.routes.js";
@@ -14,13 +15,23 @@ import reportsRoutes from "./routes/reports.routes.js";
 import dashboardRoutes from "./routes/dashboard.routes.js";
 import adminRoutes from "./routes/admin.routes.js";
 
+// Error middleware (hubi magaca export-ka file-kaaga)
 import { errorHandler } from "./middleware/error.middleware.js";
 
 const app = express();
 
+// Body parser
 app.use(express.json());
-app.use(cors({ origin: env.corsOrigin, credentials: true }));
 
+// CORS
+app.use(
+  cors({
+    origin: env.corsOrigin,
+    credentials: true,
+  })
+);
+
+// Health check
 app.get("/api/health", async (req, res, next) => {
   try {
     const result = await pool.query("SELECT NOW() as now");
@@ -30,6 +41,7 @@ app.get("/api/health", async (req, res, next) => {
   }
 });
 
+// API routes
 app.use("/api/auth", authRoutes);
 app.use("/api/users", usersRoutes);
 app.use("/api/shifts", shiftsRoutes);
@@ -41,10 +53,10 @@ app.use("/api/reports", reportsRoutes);
 app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/admin", adminRoutes);
 
-// 404
+// 404 (always after routes)
 app.use((req, res) => res.status(404).json({ message: "Route not found" }));
 
-// error handler last
+// Error handler (always last)
 app.use(errorHandler);
 
 app.listen(env.port, () => {

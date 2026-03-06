@@ -26,6 +26,11 @@ const loginSchema = z.object({
   password: z.string().min(1),
 });
 
+const changePasswordSchema = z.object({
+  current_password: z.string().min(1),
+  new_password: z.string().min(6),
+});
+
 /**
  * POST /api/auth/register  (ADMIN ONLY)
  */
@@ -52,7 +57,7 @@ router.post("/register", requireAuth, requireRole("ADMIN"), async (req, res, nex
     const result = await pool.query(
       `INSERT INTO users (full_name, email, phone, address, password, role, hourly_rate, shift_id, is_active)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8, TRUE)
-       RETURNING id, full_name, email, role, hourly_rate, shift_id, created_at`,
+       RETURNING id, full_name, email, role, hourly_rate, shift_id, phone, address, created_at`,
       [full_name, email, phone ?? null, address ?? null, hashed, role, hourly_rate, shift_id ?? null]
     );
 
@@ -83,7 +88,7 @@ router.post("/login", async (req, res, next) => {
     const { email, password } = parsed.data;
 
     const userRes = await pool.query(
-      `SELECT id, full_name, email, password, role, hourly_rate, shift_id, is_active
+      `SELECT id, full_name, email, password, role, hourly_rate, shift_id, is_active, phone, address
        FROM users WHERE email = $1`,
       [email]
     );
@@ -106,8 +111,59 @@ router.post("/login", async (req, res, next) => {
         role: user.role,
         hourly_rate: user.hourly_rate,
         shift_id: user.shift_id,
+        phone: user.phone,
+        address: user.address,
       },
     });
+  } catch (e) {
+    next(e);
+  }
+});
+
+/**
+ * POST /api/auth/change-password (Authenticated)
+ * payload: { current_password, new_password }
+ */
+router.post("/change-password", requireAuth, async (req, res, next) => {
+  try {
+    const parsed = changePasswordSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return res.status(400).json({ message: "Invalid payload", errors: parsed.error.flatten() });
+    }
+
+    const { current_password, new_password } = parsed.data;
+
+    // fetch current hash
+    const r = await pool.query(
+      `SELECT id, password, is_active
+       FROM users
+       WHERE id = $1`,
+      [req.user.id]
+    );
+
+    if (r.rowCount === 0) return res.status(404).json({ message: "User not found" });
+    const user = r.rows[0];
+    if (!user.is_active) return res.status(403).json({ message: "Account disabled" });
+
+    const ok = await bcrypt.compare(current_password, user.password);
+    if (!ok) return res.status(401).json({ message: "Current password is incorrect" });
+
+    const same = await bcrypt.compare(new_password, user.password);
+    if (same) return res.status(400).json({ message: "New password must be different" });
+
+    const hashed = await bcrypt.hash(new_password, 10);
+
+    await pool.query(`UPDATE users SET password = $1 WHERE id = $2`, [hashed, req.user.id]);
+
+    await auditLog({
+      actor_user_id: req.user.id,
+      action: "PASSWORD_CHANGE",
+      entity: "users",
+      entity_id: req.user.id,
+      meta: {},
+    });
+
+    return res.json({ message: "Password changed successfully" });
   } catch (e) {
     next(e);
   }
