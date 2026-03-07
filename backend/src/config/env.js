@@ -19,6 +19,7 @@ export const env = {
   port: Number(process.env.PORT || 5000),
   nodeEnv: process.env.NODE_ENV || "development",
 
+  // Neon database
   databaseUrl: must("DATABASE_URL"),
 
   jwtSecret: must("JWT_SECRET"),

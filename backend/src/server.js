@@ -15,7 +15,7 @@ import reportsRoutes from "./routes/reports.routes.js";
 import dashboardRoutes from "./routes/dashboard.routes.js";
 import adminRoutes from "./routes/admin.routes.js";
 
-// Error middleware (hubi magaca export-ka file-kaaga)
+// Error middleware
 import { errorHandler } from "./middleware/error.middleware.js";
 
 const app = express();
@@ -31,11 +31,20 @@ app.use(
   })
 );
 
+// Root test
+app.get("/", (req, res) => {
+  res.json({ message: "API is running" });
+});
+
 // Health check
 app.get("/api/health", async (req, res, next) => {
   try {
     const result = await pool.query("SELECT NOW() as now");
-    res.json({ status: "ok", time: result.rows[0].now, db: "connected" });
+    res.json({
+      status: "ok",
+      time: result.rows[0].now,
+      db: "connected",
+    });
   } catch (e) {
     next(e);
   }
@@ -53,10 +62,10 @@ app.use("/api/reports", reportsRoutes);
 app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/admin", adminRoutes);
 
-// 404 (always after routes)
+// 404
 app.use((req, res) => res.status(404).json({ message: "Route not found" }));
 
-// Error handler (always last)
+// Error handler
 app.use(errorHandler);
 
 app.listen(env.port, () => {
