@@ -28,7 +28,6 @@ export default function SettingsPage() {
         setBusy(false);
       }
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const save = async () => {
@@ -49,11 +48,11 @@ export default function SettingsPage() {
   if (busy) return <Card>Loading...</Card>;
 
   return (
-    <Card className="space-y-3">
+    <Card className="space-y-4">
       <div>
-        <div className="text-sm text-brand-text/70 mb-1">Overtime mode</div>
+        <div className="mb-1 text-sm text-brand-text/70">Overtime mode</div>
         <select
-          className="w-full px-4 py-3 rounded-2xl bg-brand-card border border-brand-line"
+          className="w-full rounded-2xl border border-brand-line bg-brand-card px-4 py-3 text-brand-text outline-none transition focus:border-brand-blue/60 focus:ring-2 focus:ring-brand-blue/20"
           value={overtime.overtime_mode}
           onChange={(e) => setOvertime((s) => ({ ...s, overtime_mode: e.target.value }))}
         >
@@ -66,24 +65,41 @@ export default function SettingsPage() {
 
       <div className="grid grid-cols-2 gap-2">
         <div>
-          <div className="text-sm text-brand-text/70 mb-1">Daily threshold</div>
-          <Input value={overtime.daily_threshold_hours} onChange={(e) => setOvertime((s) => ({ ...s, daily_threshold_hours: e.target.value }))} />
+          <div className="mb-1 text-sm text-brand-text/70">Daily threshold</div>
+          <Input
+            value={overtime.daily_threshold_hours}
+            onChange={(e) =>
+              setOvertime((s) => ({ ...s, daily_threshold_hours: e.target.value }))
+            }
+          />
         </div>
+
         <div>
-          <div className="text-sm text-brand-text/70 mb-1">Weekly threshold</div>
-          <Input value={overtime.weekly_threshold_hours} onChange={(e) => setOvertime((s) => ({ ...s, weekly_threshold_hours: e.target.value }))} />
+          <div className="mb-1 text-sm text-brand-text/70">Weekly threshold</div>
+          <Input
+            value={overtime.weekly_threshold_hours}
+            onChange={(e) =>
+              setOvertime((s) => ({ ...s, weekly_threshold_hours: e.target.value }))
+            }
+          />
         </div>
       </div>
 
       <div className="grid grid-cols-2 gap-2">
         <div>
-          <div className="text-sm text-brand-text/70 mb-1">Multiplier</div>
-          <Input value={overtime.overtime_multiplier} onChange={(e) => setOvertime((s) => ({ ...s, overtime_multiplier: e.target.value }))} />
+          <div className="mb-1 text-sm text-brand-text/70">Multiplier</div>
+          <Input
+            value={overtime.overtime_multiplier}
+            onChange={(e) =>
+              setOvertime((s) => ({ ...s, overtime_multiplier: e.target.value }))
+            }
+          />
         </div>
+
         <div>
-          <div className="text-sm text-brand-text/70 mb-1">Weekend policy</div>
+          <div className="mb-1 text-sm text-brand-text/70">Weekend policy</div>
           <select
-            className="w-full px-4 py-3 rounded-2xl bg-brand-card border border-brand-line"
+            className="w-full rounded-2xl border border-brand-line bg-brand-card px-4 py-3 text-brand-text outline-none transition focus:border-brand-blue/60 focus:ring-2 focus:ring-brand-blue/20"
             value={overtime.weekend_policy}
             onChange={(e) => setOvertime((s) => ({ ...s, weekend_policy: e.target.value }))}
           >

@@ -14,9 +14,11 @@ export default function Toast() {
   if (!toast) return null;
 
   return (
-    <div className="fixed top-3 left-0 right-0 px-4 z-50">
+    <div className="fixed top-3 left-0 right-0 z-50 px-4">
       <div className="mx-auto w-full max-w-md">
-        <div className="px-4 py-3 rounded-2xl bg-brand-card border border-brand-line">{toast.message}</div>
+        <div className="rounded-2xl border border-brand-line/80 bg-brand-card/95 px-4 py-3 text-sm shadow-soft backdrop-blur">
+          {toast.message}
+        </div>
       </div>
     </div>
   );

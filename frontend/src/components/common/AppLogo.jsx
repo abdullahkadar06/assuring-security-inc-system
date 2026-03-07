@@ -1,16 +1,15 @@
-export default function AppLogo({ small = false }) {
+export default function AppLogo() {
   return (
-    <div className={`flex items-center gap-2 ${small ? "mb-2" : "mb-4"}`}>
+    <div className="flex items-center gap-2">
       <img
         src="/favicon.png"
         alt="Assuring Security Inc"
-        className={small ? "w-8 h-8 rounded-md object-contain" : "w-10 h-10 rounded-md object-contain"}
+        className="h-7 w-7 shrink-0 object-contain"
       />
-      <div className="leading-tight">
-        <div className="text-[11px] uppercase tracking-wide text-brand-text/70">
-          Assuring Security Inc
-        </div>
-      </div>
+
+      <span className="text-xs font-semibold tracking-wide text-brand-text/85">
+        ASSURING SECURITY INC
+      </span>
     </div>
   );
 }

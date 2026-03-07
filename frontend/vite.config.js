@@ -8,8 +8,8 @@ export default defineConfig({
     VitePWA({
       registerType: "autoUpdate",
       injectRegister: "auto",
-      includeAssets: ["favicon.png", "logo.png", "pwa-192.png", "pwa-512.png"],
       manifest: false,
+      includeAssets: ["favicon.png", "logo.png", "pwa-192.png", "pwa-512.png"],
       workbox: {
         globPatterns: ["**/*.{js,css,html,png,svg,ico,webmanifest}"],
         cleanupOutdatedCaches: true,

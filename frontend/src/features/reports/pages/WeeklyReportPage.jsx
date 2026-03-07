@@ -36,17 +36,25 @@ export default function WeeklyReportPage() {
   };
 
   return (
-    <div className="space-y-3">
-      <Card className="space-y-2">
-        <div className="text-sm text-brand-text/70">Weekly Reports (SAT → FRI)</div>
-        <Input value={week_end} onChange={(e) => setWeekEnd(e.target.value)} placeholder="week_end (Friday) e.g 2026-03-07" />
+    <div className="space-y-4">
+      <Card className="space-y-3">
+        <div className="text-sm font-semibold text-brand-text/70">Weekly Reports (SAT → FRI)</div>
+
+        <Input
+          value={week_end}
+          onChange={(e) => setWeekEnd(e.target.value)}
+          placeholder="week_end (Friday) e.g 2026-03-07"
+        />
+
         <div className="grid grid-cols-2 gap-2">
           <Button onClick={load}>Load</Button>
-          <Button className="bg-brand-red border-brand-red" onClick={finalize}>Finalize</Button>
+          <Button className="bg-brand-red border-brand-red hover:bg-red-700" onClick={finalize}>
+            Finalize
+          </Button>
         </div>
 
         {meta && (
-          <div className="text-xs text-brand-text/70">
+          <div className="rounded-2xl border border-brand-line/70 bg-brand-bg/35 px-3 py-2 text-xs text-brand-text/70">
             {meta.week_start} → {meta.week_end} | cutoff: {meta.cutoff_day}
           </div>
         )}
@@ -54,7 +62,9 @@ export default function WeeklyReportPage() {
         <ExportButtons meta={meta} rows={rows} />
       </Card>
 
-      <ReportTable rows={rows} />
+      <div className="rounded-[28px] border border-brand-line/70 bg-brand-card/25 p-2">
+        <ReportTable rows={rows} />
+      </div>
     </div>
   );
 }

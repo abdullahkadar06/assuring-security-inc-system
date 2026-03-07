@@ -16,8 +16,6 @@ export default function PayrollPage() {
 
   const [busy, setBusy] = useState(true);
   const [rows, setRows] = useState([]);
-
-  // Admin helpers
   const [users, setUsers] = useState([]);
   const [selectedUserId, setSelectedUserId] = useState("");
 
@@ -31,27 +29,21 @@ export default function PayrollPage() {
     setRows(d?.payroll || []);
   };
 
-  // Initial load
   useEffect(() => {
     (async () => {
       setBusy(true);
       try {
-        // EMPLOYEE: always load self
         if (!isAdmin) {
           await loadPayrollForUser(user.id);
           return;
         }
 
-        // ADMIN: load users list first (dropdown)
         const u = await usersApi.list();
         const list = u?.users || [];
         setUsers(list);
 
-        // default selection: first employee/admin in list or self
-        const defaultId = (list[0]?.id ?? user.id);
+        const defaultId = list[0]?.id ?? user.id;
         setSelectedUserId(String(defaultId));
-
-        // load payroll for default
         await loadPayrollForUser(defaultId);
       } catch (e) {
         showToast(e?.response?.data?.message || "Payroll load failed", "error");
@@ -78,8 +70,6 @@ export default function PayrollPage() {
     if (!isAdmin) return;
     if (!rows.length) return showToast("No payroll rows to recalculate", "error");
 
-    // We need an attendance_id to recalc (your backend expects attendance_id)
-    // We'll take latest row attendance_id (first row) as quick action.
     const attendance_id = rows[0]?.attendance_id;
     if (!attendance_id) return showToast("Missing attendance_id", "error");
 
@@ -87,7 +77,7 @@ export default function PayrollPage() {
     try {
       await payrollApi.recalculate({ attendance_id: Number(attendance_id) });
       await loadPayrollForUser(Number(selectedUserId || user.id));
-      showToast("Recalculated (fixed pay)");
+      showToast("Recalculated");
     } catch (e) {
       showToast(e?.response?.data?.message || "Recalculate failed", "error");
     } finally {
@@ -98,13 +88,13 @@ export default function PayrollPage() {
   if (busy) return <Loader label="Loading payroll..." />;
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       {isAdmin ? (
-        <Card className="space-y-2">
-          <div className="text-sm text-brand-text/70">Admin: View anyone payroll</div>
+        <Card className="space-y-3">
+          <div className="text-sm font-semibold text-brand-text/70">Admin Payroll View</div>
 
           <select
-            className="w-full px-4 py-3 rounded-2xl bg-brand-card border border-brand-line"
+            className="w-full rounded-2xl border border-brand-line bg-brand-card px-4 py-3 text-brand-text outline-none transition focus:border-brand-blue/60 focus:ring-2 focus:ring-brand-blue/20"
             value={selectedUserId}
             onChange={(e) => setSelectedUserId(e.target.value)}
           >
@@ -116,32 +106,27 @@ export default function PayrollPage() {
           </select>
 
           {selectedUser && (
-            <div className="text-xs text-brand-text/70">
+            <div className="rounded-2xl border border-brand-line/70 bg-brand-bg/35 px-3 py-2 text-xs text-brand-text/70">
               Selected: <b>{selectedUser.full_name}</b> — {selectedUser.email}
             </div>
           )}
 
           <div className="grid grid-cols-2 gap-2">
             <Button onClick={onAdminLoad}>Load</Button>
-            <Button className="bg-brand-red border-brand-red" onClick={onRecalculate}>
+            <Button className="bg-brand-red border-brand-red hover:bg-red-700" onClick={onRecalculate}>
               Recalculate
             </Button>
-          </div>
-
-          <div className="text-xs text-brand-text/60">
-            Note: Recalculate uses latest row attendance_id (quick action).
           </div>
         </Card>
       ) : (
         <Card>
-          <div className="text-sm text-brand-text/70">My Payroll</div>
-          <div className="text-xs text-brand-text/60 mt-1">
-            You can only view your own payroll.
-          </div>
+          <div className="text-sm font-semibold text-brand-text/70">My Payroll</div>
         </Card>
       )}
 
-      <PayrollTable rows={rows} />
+      <div className="rounded-[28px] border border-brand-line/70 bg-brand-card/25 p-2">
+        <PayrollTable rows={rows} />
+      </div>
     </div>
   );
 }

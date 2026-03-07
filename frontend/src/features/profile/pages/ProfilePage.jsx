@@ -15,12 +15,10 @@ export default function ProfilePage() {
   const { online } = useNetworkStatus();
   const showToast = useUiStore((s) => s.showToast);
 
-  // Profile fields
   const [phone, setPhone] = useState(user?.phone || "");
   const [address, setAddress] = useState(user?.address || "");
   const [savingProfile, setSavingProfile] = useState(false);
 
-  // Password fields
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [changingPassword, setChangingPassword] = useState(false);
@@ -41,20 +39,17 @@ export default function ProfilePage() {
         address: address?.trim() || null
       };
 
-      // ⚠️ needs backend: PUT /api/users/me
       const res = await usersApi.updateMe(payload);
 
-      // update store user (backend should return updated user)
       if (res?.user) {
         setUser(res.user);
       } else {
-        // fallback: update local store from payload (if backend returns {message})
         updateUser({ phone: payload.phone, address: payload.address });
       }
 
       showToast("Profile updated");
     } catch (e) {
-      const msg = e?.response?.data?.message || "Update failed (backend endpoint missing?)";
+      const msg = e?.response?.data?.message || "Update failed";
       showToast(msg, "error");
     } finally {
       setSavingProfile(false);
@@ -65,13 +60,13 @@ export default function ProfilePage() {
     if (!currentPassword || !newPassword) {
       return showToast("Fill current & new password", "error");
     }
+
     if (newPassword.length < 6) {
       return showToast("New password must be at least 6 characters", "error");
     }
 
     setChangingPassword(true);
     try {
-      // ⚠️ needs backend: POST /api/auth/change-password
       await authApi.changePassword({
         current_password: currentPassword,
         new_password: newPassword
@@ -81,7 +76,7 @@ export default function ProfilePage() {
       setNewPassword("");
       showToast("Password changed");
     } catch (e) {
-      const msg = e?.response?.data?.message || "Change password failed (backend endpoint missing?)";
+      const msg = e?.response?.data?.message || "Change password failed";
       showToast(msg, "error");
     } finally {
       setChangingPassword(false);
@@ -89,51 +84,59 @@ export default function ProfilePage() {
   };
 
   return (
-    <div className="space-y-3">
-      {/* Identity */}
-      <Card>
-        <div className="text-sm text-brand-text/70">My Profile</div>
-        <div className="mt-2 space-y-1">
-          <div className="text-lg font-semibold">{user?.full_name || "-"}</div>
-          <div className="text-sm text-brand-text/80">{user?.email || "-"}</div>
-          <div className="text-xs text-brand-text/70">
-            Role: <b>{isAdmin ? "ADMIN" : "EMPLOYEE"}</b>
+    <div className="space-y-4">
+      <Card className="space-y-3">
+        <div className="text-sm font-semibold text-brand-text/70">My Profile</div>
+
+        <div className="space-y-1">
+          <div className="text-xl font-bold">{user?.full_name || "-"}</div>
+          <div className="text-sm text-brand-text/80 break-all">{user?.email || "-"}</div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3 text-sm">
+          <div className="rounded-2xl border border-brand-line/70 bg-brand-bg/35 p-3">
+            <div className="text-brand-text/60">Role</div>
+            <div className="mt-1 font-semibold">{isAdmin ? "ADMIN" : "EMPLOYEE"}</div>
           </div>
-          <div className="text-xs text-brand-text/70">
-            Shift ID: <b>{user?.shift_id ?? "-"}</b>
+
+          <div className="rounded-2xl border border-brand-line/70 bg-brand-bg/35 p-3">
+            <div className="text-brand-text/60">Shift ID</div>
+            <div className="mt-1 font-semibold">{user?.shift_id ?? "-"}</div>
           </div>
         </div>
       </Card>
 
-      {/* Update Phone/Address */}
-      <Card className="space-y-3">
-        <div className="text-sm text-brand-text/70">Update Contact</div>
+      <Card className="space-y-4">
+        <div className="text-sm font-semibold text-brand-text/70">Update Contact</div>
 
         <div>
-          <div className="text-sm text-brand-text/70 mb-1">Phone</div>
-          <Input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+252..." />
+          <div className="mb-1 text-sm text-brand-text/70">Phone</div>
+          <Input
+            value={phone}
+            onChange={(e) => setPhone(e.target.value)}
+            placeholder="+252..."
+          />
         </div>
 
         <div>
-          <div className="text-sm text-brand-text/70 mb-1">Address</div>
-          <Input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Buurta Kala Jeexan..." />
+          <div className="mb-1 text-sm text-brand-text/70">Address</div>
+          <Input
+            value={address}
+            onChange={(e) => setAddress(e.target.value)}
+            placeholder="Buurta Kala Jeexan..."
+          />
         </div>
 
         <Button disabled={savingProfile || !canSaveProfile} onClick={onSaveProfile}>
           {savingProfile ? "Saving..." : "Save"}
         </Button>
-
-        <div className="text-xs text-brand-text/60">
-          Note: requires backend endpoint <b>PUT /api/users/me</b>
-        </div>
       </Card>
 
-      {/* Change Password */}
-      <Card className="space-y-3">
-        <div className="text-sm text-brand-text/70">Change Password</div>
+      <Card className="space-y-4">
+        <div className="text-sm font-semibold text-brand-text/70">Change Password</div>
 
         <div>
-          <div className="text-sm text-brand-text/70 mb-1">Current password</div>
+          <div className="mb-1 text-sm text-brand-text/70">Current password</div>
           <Input
             type="password"
             value={currentPassword}
@@ -143,7 +146,7 @@ export default function ProfilePage() {
         </div>
 
         <div>
-          <div className="text-sm text-brand-text/70 mb-1">New password</div>
+          <div className="mb-1 text-sm text-brand-text/70">New password</div>
           <Input
             type="password"
             value={newPassword}
@@ -155,27 +158,19 @@ export default function ProfilePage() {
         <Button disabled={changingPassword} onClick={onChangePassword}>
           {changingPassword ? "Changing..." : "Change Password"}
         </Button>
-
-        <div className="text-xs text-brand-text/60">
-          Note: requires backend endpoint <b>POST /api/auth/change-password</b>
-        </div>
       </Card>
 
-      {/* App status */}
       <Card>
-        <div className="text-sm text-brand-text/70">App Status</div>
+        <div className="text-sm font-semibold text-brand-text/70">App Status</div>
         <div className="mt-2 text-sm">
           Network:{" "}
           <b className={online ? "text-green-300" : "text-red-300"}>
             {online ? "Online" : "Offline"}
           </b>
         </div>
-        <div className="text-xs text-brand-text/60 mt-2">
-          PWA install: browser menu → “Add to Home Screen”.
-        </div>
       </Card>
 
-      <Button className="bg-brand-red border-brand-red" onClick={logout}>
+      <Button className="bg-brand-red border-brand-red hover:bg-red-700" onClick={logout}>
         Logout
       </Button>
     </div>

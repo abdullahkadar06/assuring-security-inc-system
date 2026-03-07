@@ -2,8 +2,9 @@ export default function Button({ children, className = "", ...props }) {
   return (
     <button
       className={
-        "w-full py-3 rounded-2xl font-semibold active:scale-[0.99] transition border " +
-        "bg-brand-blue border-brand-blue text-white " +
+        "w-full rounded-2xl border border-brand-blue bg-brand-blue px-4 py-3 text-center text-sm font-semibold text-white " +
+        "transition-all duration-200 hover:-translate-y-[1px] hover:shadow-soft hover:brightness-110 active:translate-y-0 " +
+        "disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:translate-y-0 disabled:hover:shadow-none " +
         className
       }
       {...props}

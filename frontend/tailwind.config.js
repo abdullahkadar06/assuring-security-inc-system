@@ -12,6 +12,9 @@ export default {
           red: "#D32F2F",
           text: "#EAF0FF"
         }
+      },
+      boxShadow: {
+        soft: "0 12px 32px rgba(0, 0, 0, 0.18)"
       }
     }
   },

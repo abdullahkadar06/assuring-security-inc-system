@@ -28,27 +28,40 @@ export default function ManageShiftsPage() {
     }
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    load();
+  }, []);
 
   if (busy) return <Loader label="Loading shifts..." />;
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       <div className="grid grid-cols-2 gap-2">
         <Button onClick={() => setOpenCreate(true)}>Create Shift</Button>
-        <Button className="bg-brand-red border-brand-red" onClick={() => setOpenAssign(true)}>Assign Shift</Button>
+        <Button className="bg-brand-red border-brand-red hover:bg-red-700" onClick={() => setOpenAssign(true)}>
+          Assign Shift
+        </Button>
       </div>
 
       {items.length === 0 ? (
         <Card>No shifts found.</Card>
       ) : (
-        <div className="space-y-2">
-          {items.map((s) => <ShiftCard key={s.id} shift={s} />)}
+        <div className="space-y-3">
+          {items.map((s) => (
+            <div key={s.id} className="hover-lift">
+              <ShiftCard shift={s} />
+            </div>
+          ))}
         </div>
       )}
 
       <Modal open={openCreate} title="Create Shift" onClose={() => setOpenCreate(false)}>
-        <ShiftForm onSaved={async () => { setOpenCreate(false); await load(); }} />
+        <ShiftForm
+          onSaved={async () => {
+            setOpenCreate(false);
+            await load();
+          }}
+        />
       </Modal>
 
       <Modal open={openAssign} title="Assign Shift to User" onClose={() => setOpenAssign(false)}>

@@ -27,17 +27,31 @@ export default function UsersPage() {
     }
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    load();
+  }, []);
 
   if (busy) return <Loader label="Loading users..." />;
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       <Button onClick={() => setOpen(true)}>Create User</Button>
-      {users.length === 0 ? <Card>No users.</Card> : <UserTable rows={users} />}
+
+      {users.length === 0 ? (
+        <Card>No users.</Card>
+      ) : (
+        <div className="rounded-[28px] border border-brand-line/70 bg-brand-card/25 p-2">
+          <UserTable rows={users} />
+        </div>
+      )}
 
       <Modal open={open} title="Create User" onClose={() => setOpen(false)}>
-        <UserForm onSaved={async () => { setOpen(false); await load(); }} />
+        <UserForm
+          onSaved={async () => {
+            setOpen(false);
+            await load();
+          }}
+        />
       </Modal>
     </div>
   );
