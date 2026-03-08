@@ -4,6 +4,7 @@ import {
   Download,
   CheckCircle2,
   BarChart3,
+  Loader2,
 } from "lucide-react";
 import Card from "../../../components/ui/Card";
 import Button from "../../../components/ui/Button";
@@ -19,8 +20,10 @@ export default function WeeklyReportPage() {
   const [week_end, setWeekEnd] = useState("");
   const [rows, setRows] = useState([]);
   const [meta, setMeta] = useState(null);
+  const [busy, setBusy] = useState(false); // Loading state cusub
 
   const load = async () => {
+    setBusy(true);
     try {
       const d = await reportsApi.weekly(week_end ? { week_end } : {});
       setMeta({
@@ -29,12 +32,18 @@ export default function WeeklyReportPage() {
         cutoff_day: d.cutoff_day,
       });
       setRows(d.summary || []);
+      showToast("Report loaded successfully", "success");
     } catch (e) {
       showToast(e?.response?.data?.message || "Weekly load failed", "error");
+    } finally {
+      setBusy(false);
     }
   };
 
   const finalize = async () => {
+    if (!window.confirm("Are you sure you want to finalize this week? This action cannot be undone.")) return;
+    
+    setBusy(true);
     try {
       const d = await reportsApi.finalizeWeek(week_end ? { week_end } : {});
       setMeta({
@@ -43,9 +52,11 @@ export default function WeeklyReportPage() {
         cutoff_day: d.cutoff_day,
       });
       setRows(d.summary || []);
-      showToast("Week finalized");
+      showToast("Week finalized successfully", "success");
     } catch (e) {
       showToast(e?.response?.data?.message || "Finalize failed", "error");
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -65,16 +76,18 @@ export default function WeeklyReportPage() {
           </div>
         </div>
 
-        <div>
+        {/* Date Picker Section */}
+        <div className="pt-2">
           <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-brand-text/75">
             <CalendarRange size={16} className="text-amber-300" />
-            <span>Week Ending Date</span>
+            <span>Select Week Ending Date (Friday)</span>
           </div>
 
           <Input
+            type="date"
             value={week_end}
             onChange={(e) => setWeekEnd(e.target.value)}
-            placeholder="week_end (Friday) e.g 2026-03-07"
+            className="w-full"
           />
         </div>
 
@@ -82,32 +95,39 @@ export default function WeeklyReportPage() {
           <div>
             <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-brand-text/75">
               <Download size={16} className="text-brand-blue" />
-              <span>Load Report</span>
+              <span>Preview</span>
             </div>
-            <Button onClick={load}>Load</Button>
+            <Button disabled={busy} onClick={load} className="w-full">
+              {busy ? <Loader2 className="animate-spin" size={18} /> : "Load"}
+            </Button>
           </div>
 
           <div>
             <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-brand-text/75">
               <CheckCircle2 size={16} className="text-red-400" />
-              <span>Finalize</span>
+              <span>Finalize Week</span>
             </div>
-            <Button className="bg-brand-red border-brand-red" onClick={finalize}>
+            <Button 
+              disabled={busy} 
+              className="bg-brand-red border-brand-red hover:bg-red-600 w-full" 
+              onClick={finalize}
+            >
               Finalize
             </Button>
           </div>
         </div>
 
         {meta && (
-          <div className="rounded-2xl border border-brand-line/70 bg-brand-bg/35 px-3 py-3 text-sm text-brand-text/70">
-            {meta.week_start} → {meta.week_end} | cutoff: {meta.cutoff_day}
+          <div className="rounded-2xl border border-brand-line/70 bg-brand-bg/35 px-4 py-3 text-sm text-brand-text/75 flex justify-between items-center">
+            <span>Period: <b>{meta.week_start}</b> → <b>{meta.week_end}</b></span>
+            <span className="text-xs bg-brand-blue/10 text-brand-blue px-2 py-1 rounded-lg">Cutoff: {meta.cutoff_day}</span>
           </div>
         )}
 
         <ExportButtons meta={meta} rows={rows} />
       </Card>
 
-      <div className="rounded-[28px] border border-brand-line/70 bg-brand-card/25 p-2">
+      <div className="rounded-[28px] border border-brand-line/70 bg-brand-card/25 p-2 overflow-hidden shadow-xl">
         <ReportTable rows={rows} />
       </div>
     </div>

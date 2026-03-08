@@ -28,14 +28,23 @@ export default function AttendanceCorrectionPage() {
     setBusy(true);
     try {
       const payload = {};
-      if (clock_in) payload.clock_in = clock_in;
-      if (clock_out) payload.clock_out = clock_out;
+      
+      // Convert local datetime to ISO for the backend
+      if (clock_in) payload.clock_in = new Date(clock_in).toISOString();
+      if (clock_out) payload.clock_out = new Date(clock_out).toISOString();
       if (notes) payload.notes = notes;
 
       await adminApi.patchAttendance(Number(id), payload);
-      showToast("Attendance updated");
+      showToast("Attendance updated successfully", "success");
+      
+      // Clear form after success
+      setId("");
+      setClockIn("");
+      setClockOut("");
+      setNotes("");
     } catch (e) {
-      showToast(e?.response?.data?.message || "Patch failed", "error");
+      const msg = e?.response?.data?.message || "Patch failed";
+      showToast(msg, "error");
     } finally {
       setBusy(false);
     }
@@ -56,58 +65,68 @@ export default function AttendanceCorrectionPage() {
         </div>
       </div>
 
-      <div>
-        <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-brand-text/75">
-          <Hash size={16} className="text-brand-blue" />
-          <span>Attendance ID</span>
+      <div className="space-y-4 pt-2">
+        {/* Attendance ID */}
+        <div>
+          <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-brand-text/75">
+            <Hash size={16} className="text-brand-blue" />
+            <span>Attendance ID</span>
+          </div>
+          <Input 
+            type="number"
+            value={id} 
+            onChange={(e) => setId(e.target.value)} 
+            placeholder="e.g. 123" 
+          />
         </div>
-        <Input value={id} onChange={(e) => setId(e.target.value)} placeholder="123" />
-      </div>
 
-      <div>
-        <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-brand-text/75">
-          <Clock3 size={16} className="text-emerald-400" />
-          <span>Clock in (ISO datetime)</span>
+        {/* Clock In - Now with Date Picker */}
+        <div>
+          <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-brand-text/75">
+            <Clock3 size={16} className="text-emerald-400" />
+            <span>Clock In Date & Time</span>
+          </div>
+          <Input
+            type="datetime-local"
+            value={clock_in}
+            onChange={(e) => setClockIn(e.target.value)}
+            className="w-full"
+          />
         </div>
-        <Input
-          value={clock_in}
-          onChange={(e) => setClockIn(e.target.value)}
-          placeholder="2026-03-05T08:00:00.000Z"
-        />
-      </div>
 
-      <div>
-        <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-brand-text/75">
-          <Clock4 size={16} className="text-amber-300" />
-          <span>Clock out (ISO datetime)</span>
+        {/* Clock Out - Now with Date Picker */}
+        <div>
+          <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-brand-text/75">
+            <Clock4 size={16} className="text-amber-300" />
+            <span>Clock Out Date & Time</span>
+          </div>
+          <Input
+            type="datetime-local"
+            value={clock_out}
+            onChange={(e) => setClockOut(e.target.value)}
+            className="w-full"
+          />
         </div>
-        <Input
-          value={clock_out}
-          onChange={(e) => setClockOut(e.target.value)}
-          placeholder="2026-03-05T16:00:00.000Z"
-        />
-      </div>
 
-      <div>
-        <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-brand-text/75">
-          <FilePenLine size={16} className="text-red-400" />
-          <span>Correction reason</span>
+        {/* Reason */}
+        <div>
+          <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-brand-text/75">
+            <FilePenLine size={16} className="text-red-400" />
+            <span>Correction Reason</span>
+          </div>
+          <Input
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            placeholder="Describe why you are patching this record..."
+          />
         </div>
-        <Input
-          value={notes}
-          onChange={(e) => setNotes(e.target.value)}
-          placeholder="Reason..."
-        />
-      </div>
 
-      <div>
-        <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-brand-text/75">
-          <Save size={16} className="text-brand-blue" />
-          <span>Save patch</span>
+        {/* Submit Button */}
+        <div className="pt-2">
+          <Button disabled={busy} onClick={submit} className="w-full">
+            {busy ? "Applying Patch..." : "Save Correction"}
+          </Button>
         </div>
-        <Button disabled={busy} onClick={submit}>
-          {busy ? "Saving..." : "Save"}
-        </Button>
       </div>
     </Card>
   );
