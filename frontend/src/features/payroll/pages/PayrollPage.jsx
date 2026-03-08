@@ -1,4 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
+import {
+  Wallet,
+  Users,
+  RefreshCw,
+  Calculator,
+  Mail,
+} from "lucide-react";
 import Card from "../../../components/ui/Card";
 import Loader from "../../../components/ui/Loader";
 import Button from "../../../components/ui/Button";
@@ -55,6 +62,7 @@ export default function PayrollPage() {
 
   const onAdminLoad = async () => {
     if (!selectedUserId) return showToast("Select a user", "error");
+
     setBusy(true);
     try {
       await loadPayrollForUser(Number(selectedUserId));
@@ -89,38 +97,82 @@ export default function PayrollPage() {
 
   return (
     <div className="space-y-4">
-      {isAdmin ? (
-        <Card className="space-y-3">
-          <div className="text-sm font-semibold text-brand-text/70">Admin Payroll View</div>
+      <div className="rounded-2xl border border-brand-line/70 bg-brand-card/30 p-4">
+        <div className="flex items-start gap-3">
+          <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-brand-line/70 bg-brand-bg/40 text-brand-blue">
+            <Wallet size={22} />
+          </div>
 
-          <select
-            className="w-full rounded-2xl border border-brand-line bg-brand-card px-4 py-3 text-brand-text outline-none transition focus:border-brand-blue/60 focus:ring-2 focus:ring-brand-blue/20"
-            value={selectedUserId}
-            onChange={(e) => setSelectedUserId(e.target.value)}
-          >
-            {users.map((u) => (
-              <option key={u.id} value={u.id}>
-                #{u.id} — {u.full_name} ({u.role})
-              </option>
-            ))}
-          </select>
+          <div>
+            <div className="text-lg font-semibold text-white">
+              {isAdmin ? "Admin Payroll View" : "My Payroll"}
+            </div>
+            <div className="mt-1 text-sm text-brand-text/65">
+              {isAdmin
+                ? "Load and recalculate payroll records for staff."
+                : "View your payroll history and payment summary."}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {isAdmin ? (
+        <Card className="space-y-4">
+          <div>
+            <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-brand-text/75">
+              <Users size={16} className="text-brand-blue" />
+              <span>Select Staff Member</span>
+            </div>
+
+            <select
+              className="w-full rounded-2xl border border-brand-line bg-brand-card px-4 py-3 text-brand-text outline-none"
+              value={selectedUserId}
+              onChange={(e) => setSelectedUserId(e.target.value)}
+            >
+              {users.map((u) => (
+                <option key={u.id} value={u.id}>
+                  #{u.id} — {u.full_name} ({u.role})
+                </option>
+              ))}
+            </select>
+          </div>
 
           {selectedUser && (
-            <div className="rounded-2xl border border-brand-line/70 bg-brand-bg/35 px-3 py-2 text-xs text-brand-text/70">
-              Selected: <b>{selectedUser.full_name}</b> — {selectedUser.email}
+            <div className="rounded-2xl border border-brand-line/70 bg-brand-bg/35 p-3 text-sm text-brand-text/75">
+              <div className="flex items-center gap-2">
+                <Mail size={15} className="text-brand-blue" />
+                <span>
+                  Selected: <b>{selectedUser.full_name}</b> — {selectedUser.email}
+                </span>
+              </div>
             </div>
           )}
 
-          <div className="grid grid-cols-2 gap-2">
-            <Button onClick={onAdminLoad}>Load</Button>
-            <Button className="bg-brand-red border-brand-red hover:bg-red-700" onClick={onRecalculate}>
-              Recalculate
-            </Button>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-brand-text/75">
+                <RefreshCw size={16} className="text-brand-blue" />
+                <span>Load Payroll</span>
+              </div>
+              <Button onClick={onAdminLoad}>Load</Button>
+            </div>
+
+            <div>
+              <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-brand-text/75">
+                <Calculator size={16} className="text-red-400" />
+                <span>Recalculate</span>
+              </div>
+              <Button className="bg-brand-red border-brand-red" onClick={onRecalculate}>
+                Recalculate
+              </Button>
+            </div>
           </div>
         </Card>
       ) : (
         <Card>
-          <div className="text-sm font-semibold text-brand-text/70">My Payroll</div>
+          <div className="text-sm text-brand-text/70">
+            You can only view your own payroll records.
+          </div>
         </Card>
       )}
 

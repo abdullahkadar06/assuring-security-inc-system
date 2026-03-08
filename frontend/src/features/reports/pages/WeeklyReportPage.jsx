@@ -1,4 +1,10 @@
 import { useState } from "react";
+import {
+  CalendarRange,
+  Download,
+  CheckCircle2,
+  BarChart3,
+} from "lucide-react";
 import Card from "../../../components/ui/Card";
 import Button from "../../../components/ui/Button";
 import Input from "../../../components/ui/Input";
@@ -17,7 +23,11 @@ export default function WeeklyReportPage() {
   const load = async () => {
     try {
       const d = await reportsApi.weekly(week_end ? { week_end } : {});
-      setMeta({ week_start: d.week_start, week_end: d.week_end, cutoff_day: d.cutoff_day });
+      setMeta({
+        week_start: d.week_start,
+        week_end: d.week_end,
+        cutoff_day: d.cutoff_day,
+      });
       setRows(d.summary || []);
     } catch (e) {
       showToast(e?.response?.data?.message || "Weekly load failed", "error");
@@ -27,7 +37,11 @@ export default function WeeklyReportPage() {
   const finalize = async () => {
     try {
       const d = await reportsApi.finalizeWeek(week_end ? { week_end } : {});
-      setMeta({ week_start: d.week_start, week_end: d.week_end, cutoff_day: d.cutoff_day });
+      setMeta({
+        week_start: d.week_start,
+        week_end: d.week_end,
+        cutoff_day: d.cutoff_day,
+      });
       setRows(d.summary || []);
       showToast("Week finalized");
     } catch (e) {
@@ -37,24 +51,55 @@ export default function WeeklyReportPage() {
 
   return (
     <div className="space-y-4">
-      <Card className="space-y-3">
-        <div className="text-sm font-semibold text-brand-text/70">Weekly Reports (SAT → FRI)</div>
+      <Card className="space-y-4">
+        <div className="flex items-start gap-3">
+          <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-brand-line/70 bg-brand-bg/35 text-brand-blue">
+            <BarChart3 size={22} />
+          </div>
 
-        <Input
-          value={week_end}
-          onChange={(e) => setWeekEnd(e.target.value)}
-          placeholder="week_end (Friday) e.g 2026-03-07"
-        />
+          <div>
+            <div className="text-lg font-semibold text-white">Weekly Reports</div>
+            <div className="mt-1 text-sm text-brand-text/65">
+              Load and finalize SAT → FRI payroll report periods.
+            </div>
+          </div>
+        </div>
 
-        <div className="grid grid-cols-2 gap-2">
-          <Button onClick={load}>Load</Button>
-          <Button className="bg-brand-red border-brand-red hover:bg-red-700" onClick={finalize}>
-            Finalize
-          </Button>
+        <div>
+          <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-brand-text/75">
+            <CalendarRange size={16} className="text-amber-300" />
+            <span>Week Ending Date</span>
+          </div>
+
+          <Input
+            value={week_end}
+            onChange={(e) => setWeekEnd(e.target.value)}
+            placeholder="week_end (Friday) e.g 2026-03-07"
+          />
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-brand-text/75">
+              <Download size={16} className="text-brand-blue" />
+              <span>Load Report</span>
+            </div>
+            <Button onClick={load}>Load</Button>
+          </div>
+
+          <div>
+            <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-brand-text/75">
+              <CheckCircle2 size={16} className="text-red-400" />
+              <span>Finalize</span>
+            </div>
+            <Button className="bg-brand-red border-brand-red" onClick={finalize}>
+              Finalize
+            </Button>
+          </div>
         </div>
 
         {meta && (
-          <div className="rounded-2xl border border-brand-line/70 bg-brand-bg/35 px-3 py-2 text-xs text-brand-text/70">
+          <div className="rounded-2xl border border-brand-line/70 bg-brand-bg/35 px-3 py-3 text-sm text-brand-text/70">
             {meta.week_start} → {meta.week_end} | cutoff: {meta.cutoff_day}
           </div>
         )}

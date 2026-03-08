@@ -1,4 +1,12 @@
 import { useState } from "react";
+import {
+  ShieldCheck,
+  Hash,
+  Clock3,
+  Clock4,
+  FilePenLine,
+  Save,
+} from "lucide-react";
 import Card from "../../../components/ui/Card";
 import Input from "../../../components/ui/Input";
 import Button from "../../../components/ui/Button";
@@ -11,17 +19,18 @@ export default function AttendanceCorrectionPage() {
   const [id, setId] = useState("");
   const [clock_in, setClockIn] = useState("");
   const [clock_out, setClockOut] = useState("");
-  const [reason, setReason] = useState("");
+  const [notes, setNotes] = useState("");
   const [busy, setBusy] = useState(false);
 
   const submit = async () => {
     if (!id) return showToast("Enter attendance id", "error");
+
     setBusy(true);
     try {
       const payload = {};
       if (clock_in) payload.clock_in = clock_in;
       if (clock_out) payload.clock_out = clock_out;
-      if (reason) payload.notes = reason;
+      if (notes) payload.notes = notes;
 
       await adminApi.patchAttendance(Number(id), payload);
       showToast("Attendance updated");
@@ -34,15 +43,32 @@ export default function AttendanceCorrectionPage() {
 
   return (
     <Card className="space-y-4">
-      <div className="text-sm font-semibold text-brand-text/70">Patch Attendance (ADMIN)</div>
+      <div className="flex items-start gap-3">
+        <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-brand-line/70 bg-brand-bg/40 text-red-400">
+          <ShieldCheck size={22} />
+        </div>
+
+        <div>
+          <div className="text-lg font-semibold text-white">Patch Attendance</div>
+          <div className="mt-1 text-sm text-brand-text/65">
+            Correct attendance records using admin-level patch access.
+          </div>
+        </div>
+      </div>
 
       <div>
-        <div className="mb-1 text-sm text-brand-text/70">Attendance ID</div>
+        <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-brand-text/75">
+          <Hash size={16} className="text-brand-blue" />
+          <span>Attendance ID</span>
+        </div>
         <Input value={id} onChange={(e) => setId(e.target.value)} placeholder="123" />
       </div>
 
       <div>
-        <div className="mb-1 text-sm text-brand-text/70">Clock in (ISO datetime)</div>
+        <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-brand-text/75">
+          <Clock3 size={16} className="text-emerald-400" />
+          <span>Clock in (ISO datetime)</span>
+        </div>
         <Input
           value={clock_in}
           onChange={(e) => setClockIn(e.target.value)}
@@ -51,7 +77,10 @@ export default function AttendanceCorrectionPage() {
       </div>
 
       <div>
-        <div className="mb-1 text-sm text-brand-text/70">Clock out (ISO datetime)</div>
+        <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-brand-text/75">
+          <Clock4 size={16} className="text-amber-300" />
+          <span>Clock out (ISO datetime)</span>
+        </div>
         <Input
           value={clock_out}
           onChange={(e) => setClockOut(e.target.value)}
@@ -60,17 +89,26 @@ export default function AttendanceCorrectionPage() {
       </div>
 
       <div>
-        <div className="mb-1 text-sm text-brand-text/70">Correction reason</div>
+        <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-brand-text/75">
+          <FilePenLine size={16} className="text-red-400" />
+          <span>Correction reason</span>
+        </div>
         <Input
-          value={reason}
-          onChange={(e) => setReason(e.target.value)}
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
           placeholder="Reason..."
         />
       </div>
 
-      <Button disabled={busy} onClick={submit}>
-        {busy ? "Saving..." : "Save"}
-      </Button>
+      <div>
+        <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-brand-text/75">
+          <Save size={16} className="text-brand-blue" />
+          <span>Save patch</span>
+        </div>
+        <Button disabled={busy} onClick={submit}>
+          {busy ? "Saving..." : "Save"}
+        </Button>
+      </div>
     </Card>
   );
 }

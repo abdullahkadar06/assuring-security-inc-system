@@ -1,4 +1,14 @@
 import { useMemo, useState } from "react";
+import {
+  UserRound,
+  Shield,
+  Clock3,
+  Phone,
+  MapPin,
+  KeyRound,
+  Wifi,
+  LogOut,
+} from "lucide-react";
 import Card from "../../../components/ui/Card";
 import Button from "../../../components/ui/Button";
 import Input from "../../../components/ui/Input";
@@ -36,7 +46,7 @@ export default function ProfilePage() {
     try {
       const payload = {
         phone: phone?.trim() || null,
-        address: address?.trim() || null
+        address: address?.trim() || null,
       };
 
       const res = await usersApi.updateMe(payload);
@@ -69,7 +79,7 @@ export default function ProfilePage() {
     try {
       await authApi.changePassword({
         current_password: currentPassword,
-        new_password: newPassword
+        new_password: newPassword,
       });
 
       setCurrentPassword("");
@@ -85,23 +95,40 @@ export default function ProfilePage() {
 
   return (
     <div className="space-y-4">
-      <Card className="space-y-3">
-        <div className="text-sm font-semibold text-brand-text/70">My Profile</div>
+      <Card className="space-y-4">
+        <div className="flex items-start gap-3">
+          <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-brand-line/70 bg-brand-bg/40 text-brand-blue">
+            <UserRound size={22} />
+          </div>
+
+          <div>
+            <div className="text-lg font-semibold text-white">My Profile</div>
+            <div className="mt-1 text-sm text-brand-text/65">
+              View your profile details and account information.
+            </div>
+          </div>
+        </div>
 
         <div className="space-y-1">
           <div className="text-xl font-bold">{user?.full_name || "-"}</div>
-          <div className="text-sm text-brand-text/80 break-all">{user?.email || "-"}</div>
+          <div className="break-all text-sm text-brand-text/80">{user?.email || "-"}</div>
         </div>
 
         <div className="grid grid-cols-2 gap-3 text-sm">
           <div className="rounded-2xl border border-brand-line/70 bg-brand-bg/35 p-3">
-            <div className="text-brand-text/60">Role</div>
-            <div className="mt-1 font-semibold">{isAdmin ? "ADMIN" : "EMPLOYEE"}</div>
+            <div className="mb-1 flex items-center gap-2 text-brand-text/60">
+              <Shield size={14} className="text-amber-300" />
+              <span>Role</span>
+            </div>
+            <div className="font-semibold">{isAdmin ? "ADMIN" : "EMPLOYEE"}</div>
           </div>
 
           <div className="rounded-2xl border border-brand-line/70 bg-brand-bg/35 p-3">
-            <div className="text-brand-text/60">Shift ID</div>
-            <div className="mt-1 font-semibold">{user?.shift_id ?? "-"}</div>
+            <div className="mb-1 flex items-center gap-2 text-brand-text/60">
+              <Clock3 size={14} className="text-brand-blue" />
+              <span>Shift ID</span>
+            </div>
+            <div className="font-semibold">{user?.shift_id ?? "-"}</div>
           </div>
         </div>
       </Card>
@@ -110,16 +137,18 @@ export default function ProfilePage() {
         <div className="text-sm font-semibold text-brand-text/70">Update Contact</div>
 
         <div>
-          <div className="mb-1 text-sm text-brand-text/70">Phone</div>
-          <Input
-            value={phone}
-            onChange={(e) => setPhone(e.target.value)}
-            placeholder="+252..."
-          />
+          <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-brand-text/75">
+            <Phone size={16} className="text-brand-blue" />
+            <span>Phone</span>
+          </div>
+          <Input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+252..." />
         </div>
 
         <div>
-          <div className="mb-1 text-sm text-brand-text/70">Address</div>
+          <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-brand-text/75">
+            <MapPin size={16} className="text-emerald-400" />
+            <span>Address</span>
+          </div>
           <Input
             value={address}
             onChange={(e) => setAddress(e.target.value)}
@@ -136,7 +165,10 @@ export default function ProfilePage() {
         <div className="text-sm font-semibold text-brand-text/70">Change Password</div>
 
         <div>
-          <div className="mb-1 text-sm text-brand-text/70">Current password</div>
+          <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-brand-text/75">
+            <KeyRound size={16} className="text-amber-300" />
+            <span>Current password</span>
+          </div>
           <Input
             type="password"
             value={currentPassword}
@@ -146,7 +178,10 @@ export default function ProfilePage() {
         </div>
 
         <div>
-          <div className="mb-1 text-sm text-brand-text/70">New password</div>
+          <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-brand-text/75">
+            <KeyRound size={16} className="text-red-400" />
+            <span>New password</span>
+          </div>
           <Input
             type="password"
             value={newPassword}
@@ -162,16 +197,22 @@ export default function ProfilePage() {
 
       <Card>
         <div className="text-sm font-semibold text-brand-text/70">App Status</div>
-        <div className="mt-2 text-sm">
-          Network:{" "}
-          <b className={online ? "text-green-300" : "text-red-300"}>
-            {online ? "Online" : "Offline"}
-          </b>
+        <div className="mt-3 flex items-center gap-2 text-sm">
+          <Wifi size={16} className={online ? "text-green-300" : "text-red-300"} />
+          <span>
+            Network:{" "}
+            <b className={online ? "text-green-300" : "text-red-300"}>
+              {online ? "Online" : "Offline"}
+            </b>
+          </span>
         </div>
       </Card>
 
       <Button className="bg-brand-red border-brand-red hover:bg-red-700" onClick={logout}>
-        Logout
+        <span className="inline-flex items-center justify-center gap-2">
+          <LogOut size={16} />
+          <span>Logout</span>
+        </span>
       </Button>
     </div>
   );
