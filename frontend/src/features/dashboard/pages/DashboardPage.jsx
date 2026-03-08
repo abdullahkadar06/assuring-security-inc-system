@@ -4,13 +4,19 @@ import Card from "../../../components/ui/Card";
 import StatCard from "../components/StatCard";
 import { dashboardApi } from "../../../api/dashboard.api";
 import { useUiStore } from "../../../state/ui/ui.store";
+import { useRole } from "../../../hooks/useRole";
+import CompactAnalytics from "../components/CompactAnalytics";
 
 export default function DashboardPage() {
   const showToast = useUiStore((s) => s.showToast);
+  const { isAdmin } = useRole();
 
   const [busy, setBusy] = useState(true);
   const [today, setToday] = useState([]);
   const [weekly, setWeekly] = useState(null);
+
+  const [adminOverview, setAdminOverview] = useState(null);
+  const [adminWeekly, setAdminWeekly] = useState(null);
 
   useEffect(() => {
     (async () => {
@@ -20,13 +26,29 @@ export default function DashboardPage() {
 
         setToday(t?.today || []);
         setWeekly(w || null);
+
+        if (isAdmin) {
+          try {
+            const ao = await dashboardApi.adminOverview();
+            setAdminOverview(ao || null);
+          } catch {
+            setAdminOverview(null);
+          }
+
+          try {
+            const aw = await dashboardApi.adminWeekly();
+            setAdminWeekly(aw || null);
+          } catch {
+            setAdminWeekly(null);
+          }
+        }
       } catch (e) {
         showToast(e?.response?.data?.message || "Dashboard failed", "error");
       } finally {
         setBusy(false);
       }
     })();
-  }, [showToast]);
+  }, [showToast, isAdmin]);
 
   if (busy) return <Loader label="Loading dashboard..." />;
 
@@ -70,6 +92,14 @@ export default function DashboardPage() {
           </div>
         ) : null}
       </Card>
+
+      <CompactAnalytics
+        isAdmin={isAdmin}
+        today={today}
+        weekly={weekly}
+        adminOverview={adminOverview}
+        adminWeekly={adminWeekly}
+      />
     </div>
   );
 }

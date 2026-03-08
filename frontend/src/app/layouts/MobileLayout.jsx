@@ -5,25 +5,19 @@ import BottomNav from "../../components/navigation/BottomNav";
 export default function MobileLayout() {
   return (
     <div className="min-h-screen bg-brand-bg text-brand-text safe-area">
-
-      <div className="mx-auto flex min-h-screen w-full max-w-md flex-col px-4 pt-3 pb-32">
-
+      <div className="mx-auto flex min-h-screen w-full max-w-md flex-col px-4 pt-3 pb-28">
         <div className="flex-1 rounded-[32px] border border-brand-line/60 bg-gradient-to-b from-brand-card/40 to-brand-bg shadow-xl">
-
           <TopBar />
 
-          <main className="px-4 pt-4 pb-6">
+          <main className="px-4 pt-4 pb-4">
             <Outlet />
           </main>
-
         </div>
 
-        <div className="mt-4">
+        <div className="mt-3">
           <BottomNav />
         </div>
-
       </div>
-
     </div>
   );
 }

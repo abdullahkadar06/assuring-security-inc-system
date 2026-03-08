@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { pool } from "../db/pool.js";
 import { requireAuth } from "../middleware/auth.middleware.js";
+import { requireRole } from "../middleware/requireRole.js";
 
 const router = Router();
 
@@ -15,6 +16,7 @@ function payrollWindowByFriday(today = new Date()) {
   weekStart.setDate(weekStart.getDate() - 6);
   return { weekStart, weekEnd };
 }
+
 function toISODate(d) {
   const x = new Date(d);
   x.setHours(0, 0, 0, 0);
@@ -102,6 +104,109 @@ router.get("/me/weekly", requireAuth, async (req, res, next) => {
       cutoff_day: "FRI",
       summary: summary.rows[0],
       attendance: attendance.rows,
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
+/**
+ * ADMIN OVERVIEW
+ * Suggested for compact admin analytics
+ */
+router.get("/admin/overview", requireAuth, requireRole("ADMIN"), async (req, res, next) => {
+  try {
+    const overview = await pool.query(
+      `
+      WITH staff AS (
+        SELECT COUNT(*)::int AS total_staff
+        FROM users
+        WHERE is_active = TRUE
+      ),
+      today_att AS (
+        SELECT
+          COUNT(DISTINCT user_id) FILTER (WHERE status = 'OPEN' OR status = 'CLOSED')::int AS present_today,
+          COUNT(DISTINCT user_id) FILTER (WHERE late_minutes > 0)::int AS late_today
+        FROM attendance
+        WHERE scheduled_start IS NOT NULL
+          AND scheduled_start::date = CURRENT_DATE
+      ),
+      today_abs AS (
+        SELECT COUNT(*)::int AS absent_today
+        FROM absences
+        WHERE work_date = CURRENT_DATE
+      )
+      SELECT
+        (SELECT total_staff FROM staff) AS total_staff,
+        COALESCE((SELECT present_today FROM today_att), 0) AS present,
+        COALESCE((SELECT absent_today FROM today_abs), 0) AS absent,
+        COALESCE((SELECT late_today FROM today_att), 0) AS late
+      `
+    );
+
+    const row = overview.rows[0] || {
+      total_staff: 0,
+      present: 0,
+      absent: 0,
+      late: 0,
+    };
+
+    res.json({
+      summary: row,
+      distribution: [
+        { name: "Present", value: Number(row.present || 0) },
+        { name: "Absent", value: Number(row.absent || 0) },
+        { name: "Late", value: Number(row.late || 0) },
+      ],
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
+/**
+ * ADMIN WEEKLY
+ */
+router.get("/admin/weekly", requireAuth, requireRole("ADMIN"), async (req, res, next) => {
+  try {
+    const { weekStart, weekEnd } = payrollWindowByFriday(new Date());
+    const weekStartISO = toISODate(weekStart);
+    const weekEndISO = toISODate(weekEnd);
+
+    const summary = await pool.query(
+      `
+      WITH att AS (
+        SELECT
+          COALESCE(SUM(total_hours),0) AS worked_hours,
+          COALESCE(SUM(paid_hours),0) AS paid_hours,
+          COUNT(*) FILTER (WHERE late_minutes > 0) AS late_count
+        FROM attendance
+        WHERE scheduled_start IS NOT NULL
+          AND scheduled_start::date BETWEEN $1::date AND $2::date
+      ),
+      abs AS (
+        SELECT COUNT(*) AS absent_days
+        FROM absences
+        WHERE work_date BETWEEN $1::date AND $2::date
+      ),
+      pay AS (
+        SELECT COALESCE(SUM(total_pay),0) AS total_pay
+        FROM payroll
+      )
+      SELECT
+        (SELECT worked_hours FROM att) AS worked_hours,
+        (SELECT paid_hours FROM att) AS paid_hours,
+        (SELECT late_count FROM att) AS late_count,
+        (SELECT absent_days FROM abs) AS absent_days,
+        (SELECT total_pay FROM pay) AS total_pay
+      `,
+      [weekStartISO, weekEndISO]
+    );
+
+    res.json({
+      week_start: weekStartISO,
+      week_end: weekEndISO,
+      summary: summary.rows[0],
     });
   } catch (e) {
     next(e);
