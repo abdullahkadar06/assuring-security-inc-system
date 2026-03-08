@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { UserPlus, Users as UsersIcon, Search } from "lucide-react";
+import { UserPlus } from "lucide-react";
 import Card from "../../../components/ui/Card";
 import Loader from "../../../components/ui/Loader";
 import Button from "../../../components/ui/Button";
@@ -22,27 +22,33 @@ export default function UsersPage() {
       setUsers(d?.users || []);
     } catch (e) {
       showToast("Could not load users", "error");
-    } finally { setBusy(false); }
+    } finally {
+      setBusy(false);
+    }
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    load();
+  }, []);
 
   if (busy) return <Loader label="Fetching employees..." />;
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex-1 flex items-center gap-2 rounded-2xl border border-brand-line bg-brand-card/40 px-3 py-2 text-brand-text/50">
-          <Search size={18} />
-          <span className="text-sm italic">Search employees...</span>
-        </div>
-        <Button onClick={() => setOpen(true)} className="flex items-center gap-2 px-4 shadow-lg shadow-brand-blue/20">
-          <UserPlus size={18} /> <span className="hidden sm:inline">Add</span>
+      <div className="flex justify-end">
+        <Button
+          onClick={() => setOpen(true)}
+          className="flex items-center gap-2 px-4 shadow-lg shadow-brand-blue/20"
+        >
+          <UserPlus size={18} />
+          <span className="hidden sm:inline">Add</span>
         </Button>
       </div>
 
       {users.length === 0 ? (
-        <Card className="text-center py-10 text-brand-text/50">No employees found in the database.</Card>
+        <Card className="text-center py-10 text-brand-text/50">
+          No employees found in the database.
+        </Card>
       ) : (
         <div className="rounded-[28px] border border-brand-line/70 bg-brand-card/25 p-2 overflow-hidden shadow-xl">
           <UserTable rows={users} reload={load} />
@@ -50,7 +56,12 @@ export default function UsersPage() {
       )}
 
       <Modal open={open} title="Register New Employee" onClose={() => setOpen(false)}>
-        <UserForm onSaved={async () => { setOpen(false); await load(); }} />
+        <UserForm
+          onSaved={async () => {
+            setOpen(false);
+            await load();
+          }}
+        />
       </Modal>
     </div>
   );

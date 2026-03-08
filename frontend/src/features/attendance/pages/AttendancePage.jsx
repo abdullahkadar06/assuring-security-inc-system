@@ -1,64 +1,49 @@
-import { ClipboardCheck, LogIn, LogOut, CalendarDays, ListFilter } from "lucide-react";
+import { ClipboardCheck, LogIn, LogOut, CalendarDays } from "lucide-react";
 import TodaySummaryCard from "../components/TodaySummaryCard";
 import CheckInButton from "../components/CheckInButton";
 import CheckOutButton from "../components/CheckOutButton";
-import AttendanceTable from "../components/AttendanceTable"; // 🚀 SAXID: Waxaan soo dhex raacinay Table-ka
 
 export default function AttendancePage() {
   return (
-    <div className="space-y-6 pb-10">
-      {/* Header Section */}
-      <div className="rounded-3xl border border-brand-line/70 bg-gradient-to-br from-brand-card/40 to-brand-bg/20 p-5 shadow-lg">
-        <div className="flex items-start gap-4">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-brand-line/70 bg-brand-bg/60 text-brand-blue shadow-inner">
-            <ClipboardCheck size={24} />
+    <div className="space-y-4">
+      <div className="rounded-2xl border border-brand-line/70 bg-brand-card/30 p-4">
+        <div className="flex items-start gap-3">
+          <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-brand-line/70 bg-brand-bg/40 text-brand-blue">
+            <ClipboardCheck size={22} />
           </div>
           <div>
-            <div className="text-xl font-bold text-white tracking-tight">Attendance</div>
-            <div className="mt-1 text-xs text-brand-text/60 leading-relaxed">
-              Real-time monitoring of active shifts and daily working sessions.
+            <div className="text-lg font-semibold text-white">Attendance</div>
+            <div className="mt-1 text-sm text-brand-text/65">
+              Manage today attendance, shift status, and working session.
             </div>
           </div>
         </div>
       </div>
 
-      {/* Summary Section */}
-      <div className="rounded-3xl border border-brand-line/70 bg-brand-card/20 p-4">
-        <div className="mb-4 flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-brand-text/70 px-1">
-          <CalendarDays size={14} className="text-brand-blue" />
-          <span>Daily Performance</span>
+      <div className="rounded-2xl border border-brand-line/70 bg-brand-card/20 p-3">
+        <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-brand-text/80">
+          <CalendarDays size={16} className="text-brand-blue" />
+          <span>Today Summary</span>
         </div>
         <TodaySummaryCard />
       </div>
 
-      {/* Action Buttons Group */}
-      <div className="grid grid-cols-2 gap-4">
-        <div className="rounded-3xl border border-brand-line/70 bg-brand-card/20 p-4 hover:border-emerald-400/40 transition-colors">
-          <div className="mb-4 flex items-center gap-2 text-[11px] font-bold uppercase text-brand-text/70">
-            <LogIn size={14} className="text-emerald-400" />
-            <span>Check In</span>
+      <div className="grid grid-cols-1 gap-3">
+        <div className="rounded-2xl border border-brand-line/70 bg-brand-card/20 p-3">
+          <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-brand-text/80">
+            <LogIn size={16} className="text-emerald-400" />
+            <span>Start Shift</span>
           </div>
           <CheckInButton />
         </div>
 
-        <div className="rounded-3xl border border-brand-line/70 bg-brand-card/20 p-4 hover:border-red-400/40 transition-colors">
-          <div className="mb-4 flex items-center gap-2 text-[11px] font-bold uppercase text-brand-text/70">
-            <LogOut size={14} className="text-red-400" />
-            <span>Check Out</span>
+        <div className="rounded-2xl border border-brand-line/70 bg-brand-card/20 p-3">
+          <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-brand-text/80">
+            <LogOut size={16} className="text-red-400" />
+            <span>End Shift</span>
           </div>
           <CheckOutButton />
         </div>
-      </div>
-
-      {/* 🚀 QAYBTA CUSUB: Records Table with Search */}
-      <div className="pt-2">
-        <div className="mb-4 flex items-center justify-between px-1">
-          <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-brand-text/70">
-            <ListFilter size={14} className="text-brand-blue" />
-            <span>Recent Activity</span>
-          </div>
-        </div>
-        <AttendanceTable />
       </div>
     </div>
   );
