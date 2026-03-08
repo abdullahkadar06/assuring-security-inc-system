@@ -5,6 +5,7 @@ import StatCard from "../components/StatCard";
 import { dashboardApi } from "../../../api/dashboard.api";
 import { useUiStore } from "../../../state/ui/ui.store";
 import { useRole } from "../../../hooks/useRole";
+import { useAuth } from "../../../hooks/useAuth";
 import CompactAnalytics from "../components/CompactAnalytics";
 import {
   Activity,
@@ -14,11 +15,13 @@ import {
   CircleX,
   BriefcaseBusiness,
   Landmark,
+  SunMoon,
 } from "lucide-react";
 
 export default function DashboardPage() {
   const showToast = useUiStore((s) => s.showToast);
   const { isAdmin } = useRole();
+  const { user } = useAuth();
 
   const [busy, setBusy] = useState(true);
   const [today, setToday] = useState([]);
@@ -43,7 +46,6 @@ export default function DashboardPage() {
           } catch {
             setAdminOverview(null);
           }
-
           try {
             const aw = await dashboardApi.adminWeekly();
             setAdminWeekly(aw || null);
@@ -52,7 +54,7 @@ export default function DashboardPage() {
           }
         }
       } catch (e) {
-        showToast(e?.response?.data?.message || "Dashboard failed", "error");
+        showToast(e?.response?.data?.message || "Dashboard load failed", "error");
       } finally {
         setBusy(false);
       }
@@ -65,18 +67,40 @@ export default function DashboardPage() {
   const weekStart = weekly?.week_start;
   const weekEnd = weekly?.week_end;
 
+  // Determine shift text based on ID
+  const shiftText = user?.shift_id === 1 ? "MORNING (08:00 - 16:00)" : 
+                    user?.shift_id === 2 ? "NIGHT (23:00 - 07:00)" : "Not Assigned";
+
+  // Clean status display
+  const currentStatus = latest?.status && latest.status !== 'NONE' ? latest.status : "Off Duty";
+
   return (
     <div className="space-y-4">
+      {/* Greeting and Shift Card */}
+      <div className="mb-2">
+        <h1 className="text-xl font-bold text-white mb-3">
+          Welcome, {user?.full_name?.split(' ')[0] || 'User'} 👋
+        </h1>
+        <div className="rounded-2xl border border-brand-blue/30 bg-brand-blue/10 p-4 flex items-center justify-between">
+          <div>
+            <div className="text-sm text-brand-blue font-semibold mb-1">Your Shift Today</div>
+            <div className="text-lg text-white font-bold">{shiftText}</div>
+          </div>
+          <div className="bg-brand-blue/20 p-2 rounded-xl text-brand-blue">
+            <SunMoon size={24} />
+          </div>
+        </div>
+      </div>
+
       <div className="grid grid-cols-2 gap-3">
         <StatCard
           title="Today Status"
-          value={latest?.status || "NONE"}
+          value={currentStatus}
           icon={<Activity size={22} />}
         />
-
         <StatCard
           title="Paid hours"
-          value={latest?.paid_hours ?? 0}
+          value={`${Number(latest?.paid_hours ?? 0).toFixed(2)} h`}
           icon={<Wallet size={22} />}
         />
       </div>
@@ -87,39 +111,31 @@ export default function DashboardPage() {
           <span>This Week (SAT → FRI)</span>
         </div>
 
-        <div className="mt-4 grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
+        <div className="mt-4 grid grid-cols-2 gap-x-6 gap-y-4 text-sm">
           <div className="flex items-center gap-2">
-            <BadgeDollarSign size={15} className="text-emerald-400" />
-            <span>
-              Paid: <b>{weekly?.summary?.paid_hours ?? 0}</b>
-            </span>
+            <BadgeDollarSign size={16} className="text-emerald-400" />
+            <span>Paid: <b>{Number(weekly?.summary?.paid_hours ?? 0).toFixed(2)} h</b></span>
           </div>
 
           <div className="flex items-center gap-2">
-            <CircleX size={15} className="text-red-400" />
-            <span>
-              Absent: <b>{weekly?.summary?.absent_days ?? 0}</b>
-            </span>
+            <CircleX size={16} className="text-red-400" />
+            <span>Absent: <b>{weekly?.summary?.absent_days ?? 0} d</b></span>
           </div>
 
           <div className="flex items-center gap-2">
-            <BriefcaseBusiness size={15} className="text-amber-300" />
-            <span>
-              Worked: <b>{weekly?.summary?.worked_net_hours ?? 0}</b>
-            </span>
+            <BriefcaseBusiness size={16} className="text-amber-300" />
+            <span>Worked: <b>{Number(weekly?.summary?.worked_net_hours ?? 0).toFixed(2)} h</b></span>
           </div>
 
           <div className="flex items-center gap-2">
-            <Landmark size={15} className="text-brand-blue" />
-            <span>
-              Total pay: <b>{weekly?.summary?.total_pay ?? 0}</b>
-            </span>
+            <Landmark size={16} className="text-brand-blue" />
+            <span>Total pay: <b>${Number(weekly?.summary?.total_pay ?? 0).toFixed(2)}</b></span>
           </div>
         </div>
 
         {weekStart && weekEnd ? (
-          <div className="mt-4 rounded-2xl border border-brand-line/70 bg-brand-bg/35 px-3 py-2 text-xs text-brand-text/60">
-            {weekStart} - {weekEnd}
+          <div className="mt-4 rounded-xl border border-brand-line/70 bg-brand-bg/35 px-3 py-2 text-xs text-center text-brand-text/60 font-medium">
+            Period: {weekStart} to {weekEnd}
           </div>
         ) : null}
       </Card>

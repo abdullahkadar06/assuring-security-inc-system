@@ -1,5 +1,3 @@
-
-
 import { Router } from "express";
 import { z } from "zod";
 import { pool } from "../db/pool.js";
@@ -9,11 +7,14 @@ import { auditLog } from "../utils/audit.js";
 
 const router = Router();
 
+// Regex-kan cusub wuxuu ogolaanayaa HH:MM iyo HH:MM:SS (si uusan error u keenin marka db xogta laga soo celiyo)
+const timeRegex = /^\d{2}:\d{2}(:\d{2})?$/;
+
 const shiftSchema = z.object({
   code: z.string().min(2).max(20).regex(/^[A-Z_]+$/),
   name: z.string().min(2).max(100),
-  start_time: z.string().regex(/^\d{2}:\d{2}$/),
-  end_time: z.string().regex(/^\d{2}:\d{2}$/),
+  start_time: z.string().regex(timeRegex, "Invalid start time format"),
+  end_time: z.string().regex(timeRegex, "Invalid end time format"),
   grace_before_minutes: z.number().int().min(0).max(180).default(15),
   grace_after_minutes: z.number().int().min(0).max(180).default(15),
   is_active: z.boolean().default(true),

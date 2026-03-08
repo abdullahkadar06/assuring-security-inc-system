@@ -7,7 +7,6 @@ import {
   MapPin,
   KeyRound,
   Wifi,
-  LogOut,
 } from "lucide-react";
 import Card from "../../../components/ui/Card";
 import Button from "../../../components/ui/Button";
@@ -20,7 +19,7 @@ import { usersApi } from "../../../api/users.api";
 import { authApi } from "../../../api/auth.api";
 
 export default function ProfilePage() {
-  const { user, logout, setUser, updateUser } = useAuth();
+  const { user, setUser, updateUser } = useAuth();
   const { isAdmin } = useRole();
   const { online } = useNetworkStatus();
   const showToast = useUiStore((s) => s.showToast);
@@ -31,6 +30,7 @@ export default function ProfilePage() {
 
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState(""); // 👈 Halkan ayaan ku darnay
   const [changingPassword, setChangingPassword] = useState(false);
 
   const canSaveProfile = useMemo(() => {
@@ -57,7 +57,7 @@ export default function ProfilePage() {
         updateUser({ phone: payload.phone, address: payload.address });
       }
 
-      showToast("Profile updated");
+      showToast("Profile updated successfully", "success");
     } catch (e) {
       const msg = e?.response?.data?.message || "Update failed";
       showToast(msg, "error");
@@ -67,8 +67,13 @@ export default function ProfilePage() {
   };
 
   const onChangePassword = async () => {
-    if (!currentPassword || !newPassword) {
-      return showToast("Fill current & new password", "error");
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      return showToast("Please fill all password fields", "error");
+    }
+
+    // 👈 Halkan waxaan ku hubinaynaa inay isku mid yihiin
+    if (newPassword !== confirmPassword) {
+      return showToast("New passwords do not match!", "error");
     }
 
     if (newPassword.length < 6) {
@@ -84,14 +89,19 @@ export default function ProfilePage() {
 
       setCurrentPassword("");
       setNewPassword("");
-      showToast("Password changed");
+      setConfirmPassword(""); // 👈 Waan tirtiraynaa markuu guulaysto
+      showToast("Password changed successfully", "success");
     } catch (e) {
-      const msg = e?.response?.data?.message || "Change password failed";
+      const msg = e?.response?.data?.message || "Password change failed";
       showToast(msg, "error");
     } finally {
       setChangingPassword(false);
     }
   };
+
+  // Map Shift ID to Shift Name
+  const shiftDisplay = user?.shift_id === 1 ? "MORNING" : 
+                       user?.shift_id === 2 ? "NIGHT" : "UNASSIGNED";
 
   return (
     <div className="space-y-4">
@@ -126,22 +136,22 @@ export default function ProfilePage() {
           <div className="rounded-2xl border border-brand-line/70 bg-brand-bg/35 p-3">
             <div className="mb-1 flex items-center gap-2 text-brand-text/60">
               <Clock3 size={14} className="text-brand-blue" />
-              <span>Shift ID</span>
+              <span>Shift</span>
             </div>
-            <div className="font-semibold">{user?.shift_id ?? "-"}</div>
+            <div className="font-semibold">{shiftDisplay}</div>
           </div>
         </div>
       </Card>
 
       <Card className="space-y-4">
-        <div className="text-sm font-semibold text-brand-text/70">Update Contact</div>
+        <div className="text-sm font-semibold text-brand-text/70">Contact Information</div>
 
         <div>
           <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-brand-text/75">
             <Phone size={16} className="text-brand-blue" />
-            <span>Phone</span>
+            <span>Phone Number</span>
           </div>
-          <Input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+252..." />
+          <Input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="e.g. +252 63 4123456" />
         </div>
 
         <div>
@@ -152,12 +162,12 @@ export default function ProfilePage() {
           <Input
             value={address}
             onChange={(e) => setAddress(e.target.value)}
-            placeholder="Buurta Kala Jeexan..."
+            placeholder="Enter your full address..."
           />
         </div>
 
         <Button disabled={savingProfile || !canSaveProfile} onClick={onSaveProfile}>
-          {savingProfile ? "Saving..." : "Save"}
+          {savingProfile ? "Saving..." : "Save Changes"}
         </Button>
       </Card>
 
@@ -167,7 +177,7 @@ export default function ProfilePage() {
         <div>
           <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-brand-text/75">
             <KeyRound size={16} className="text-amber-300" />
-            <span>Current password</span>
+            <span>Current Password</span>
           </div>
           <Input
             type="password"
@@ -179,8 +189,8 @@ export default function ProfilePage() {
 
         <div>
           <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-brand-text/75">
-            <KeyRound size={16} className="text-red-400" />
-            <span>New password</span>
+            <KeyRound size={16} className="text-emerald-400" />
+            <span>New Password</span>
           </div>
           <Input
             type="password"
@@ -190,30 +200,37 @@ export default function ProfilePage() {
           />
         </div>
 
+        {/* 👈 Halkan waa Input-ka cusub ee Confirm Password */}
+        <div>
+          <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-brand-text/75">
+            <KeyRound size={16} className="text-red-400" />
+            <span>Confirm New Password</span>
+          </div>
+          <Input
+            type="password"
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            placeholder="******"
+          />
+        </div>
+
         <Button disabled={changingPassword} onClick={onChangePassword}>
-          {changingPassword ? "Changing..." : "Change Password"}
+          {changingPassword ? "Updating..." : "Update Password"}
         </Button>
       </Card>
 
       <Card>
-        <div className="text-sm font-semibold text-brand-text/70">App Status</div>
+        <div className="text-sm font-semibold text-brand-text/70">System Status</div>
         <div className="mt-3 flex items-center gap-2 text-sm">
-          <Wifi size={16} className={online ? "text-green-300" : "text-red-300"} />
+          <Wifi size={16} className={online ? "text-green-300" : "text-red-400"} />
           <span>
             Network:{" "}
-            <b className={online ? "text-green-300" : "text-red-300"}>
+            <b className={online ? "text-green-300" : "text-red-400"}>
               {online ? "Online" : "Offline"}
             </b>
           </span>
         </div>
       </Card>
-
-      <Button className="bg-brand-red border-brand-red hover:bg-red-700" onClick={logout}>
-        <span className="inline-flex items-center justify-center gap-2">
-          <LogOut size={16} />
-          <span>Logout</span>
-        </span>
-      </Button>
     </div>
   );
 }
