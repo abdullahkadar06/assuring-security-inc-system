@@ -37,36 +37,51 @@ export default function PayrollPage() {
   };
 
   useEffect(() => {
-    (async () => {
-      setBusy(true);
+    let isMounted = true;
+
+    // Nidaamka Silent Auto-Retry ee ka hortagaya Database Error-ka
+    const initData = async (retryCount = 1) => {
       try {
         if (!isAdmin) {
           await loadPayrollForUser(user.id);
+          if (isMounted) setBusy(false);
           return;
         }
 
         const u = await usersApi.list();
         const list = u?.users || [];
-        setUsers(list);
+        if (isMounted) setUsers(list);
 
         const defaultId = list[0]?.id ?? user.id;
-        setSelectedUserId(String(defaultId));
+        if (isMounted) setSelectedUserId(String(defaultId));
+
         await loadPayrollForUser(defaultId);
+        if (isMounted) setBusy(false);
       } catch (e) {
-        showToast(e?.response?.data?.message || "Payroll load failed", "error");
-      } finally {
-        setBusy(false);
+        // Haddii DB uu hurdo, si aamusnaan ah ayuu dib isugu dayayaa
+        if (retryCount > 0 && isMounted) {
+          setTimeout(() => initData(retryCount - 1), 2500);
+        } else if (isMounted) {
+          showToast(e?.response?.data?.message || "Payroll load failed", "error");
+          setBusy(false);
+        }
       }
-    })();
+    };
+
+    setBusy(true);
+    initData();
+
+    return () => {
+      isMounted = false;
+    };
   }, [isAdmin, user?.id, showToast]);
 
   const onAdminLoad = async () => {
     if (!selectedUserId) return showToast("Select a user", "error");
-
     setBusy(true);
     try {
       await loadPayrollForUser(Number(selectedUserId));
-      showToast("Payroll loaded");
+      showToast("Payroll loaded successfully", "success");
     } catch (e) {
       showToast(e?.response?.data?.message || "Load failed", "error");
     } finally {
@@ -85,7 +100,7 @@ export default function PayrollPage() {
     try {
       await payrollApi.recalculate({ attendance_id: Number(attendance_id) });
       await loadPayrollForUser(Number(selectedUserId || user.id));
-      showToast("Recalculated");
+      showToast("Payroll recalculated successfully", "success");
     } catch (e) {
       showToast(e?.response?.data?.message || "Recalculate failed", "error");
     } finally {
@@ -125,7 +140,7 @@ export default function PayrollPage() {
             </div>
 
             <select
-              className="w-full rounded-2xl border border-brand-line bg-brand-card px-4 py-3 text-brand-text outline-none"
+              className="w-full rounded-2xl border border-brand-line bg-[#0f172a] px-4 py-3 text-white outline-none focus:border-brand-blue"
               value={selectedUserId}
               onChange={(e) => setSelectedUserId(e.target.value)}
             >
@@ -162,7 +177,7 @@ export default function PayrollPage() {
                 <Calculator size={16} className="text-red-400" />
                 <span>Recalculate</span>
               </div>
-              <Button className="bg-brand-red border-brand-red" onClick={onRecalculate}>
+              <Button className="bg-brand-red border-brand-red hover:bg-red-600" onClick={onRecalculate}>
                 Recalculate
               </Button>
             </div>
@@ -176,7 +191,7 @@ export default function PayrollPage() {
         </Card>
       )}
 
-      <div className="rounded-[28px] border border-brand-line/70 bg-brand-card/25 p-2">
+      <div className="rounded-[28px] border border-brand-line/70 bg-brand-card/25 p-2 overflow-hidden">
         <PayrollTable rows={rows} />
       </div>
     </div>

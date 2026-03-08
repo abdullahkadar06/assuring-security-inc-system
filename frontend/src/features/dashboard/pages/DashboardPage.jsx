@@ -26,57 +26,62 @@ export default function DashboardPage() {
   const [busy, setBusy] = useState(true);
   const [today, setToday] = useState([]);
   const [weekly, setWeekly] = useState(null);
-
   const [adminOverview, setAdminOverview] = useState(null);
   const [adminWeekly, setAdminWeekly] = useState(null);
 
   useEffect(() => {
-    (async () => {
+    let isMounted = true;
+
+    const loadDashboardData = async (retryCount = 1) => {
       try {
         const t = await dashboardApi.meToday();
         const w = await dashboardApi.meWeekly();
 
-        setToday(t?.today || []);
-        setWeekly(w || null);
+        if (isMounted) {
+          setToday(t?.today || []);
+          setWeekly(w || null);
+        }
 
         if (isAdmin) {
           try {
             const ao = await dashboardApi.adminOverview();
-            setAdminOverview(ao || null);
+            if (isMounted) setAdminOverview(ao || null);
           } catch {
-            setAdminOverview(null);
+            if (isMounted) setAdminOverview(null);
           }
           try {
             const aw = await dashboardApi.adminWeekly();
-            setAdminWeekly(aw || null);
+            if (isMounted) setAdminWeekly(aw || null);
           } catch {
-            setAdminWeekly(null);
+            if (isMounted) setAdminWeekly(null);
           }
         }
+        if (isMounted) setBusy(false);
       } catch (e) {
-        showToast(e?.response?.data?.message || "Dashboard load failed", "error");
-      } finally {
-        setBusy(false);
+        if (retryCount > 0 && isMounted) {
+          setTimeout(() => loadDashboardData(retryCount - 1), 2500);
+        } else if (isMounted) {
+          showToast(e?.response?.data?.message || "Dashboard load failed", "error");
+          setBusy(false);
+        }
       }
-    })();
+    };
+
+    setBusy(true);
+    loadDashboardData();
+
+    return () => { isMounted = false; };
   }, [showToast, isAdmin]);
 
   if (busy) return <Loader label="Loading dashboard..." />;
 
   const latest = today?.[0];
-  const weekStart = weekly?.week_start;
-  const weekEnd = weekly?.week_end;
-
-  // Determine shift text based on ID
   const shiftText = user?.shift_id === 1 ? "MORNING (08:00 - 16:00)" : 
                     user?.shift_id === 2 ? "NIGHT (23:00 - 07:00)" : "Not Assigned";
-
-  // Clean status display
   const currentStatus = latest?.status && latest.status !== 'NONE' ? latest.status : "Off Duty";
 
   return (
     <div className="space-y-4">
-      {/* Greeting and Shift Card */}
       <div className="mb-2">
         <h1 className="text-xl font-bold text-white mb-3">
           Welcome, {user?.full_name?.split(' ')[0] || 'User'} 👋
@@ -93,16 +98,8 @@ export default function DashboardPage() {
       </div>
 
       <div className="grid grid-cols-2 gap-3">
-        <StatCard
-          title="Today Status"
-          value={currentStatus}
-          icon={<Activity size={22} />}
-        />
-        <StatCard
-          title="Paid hours"
-          value={`${Number(latest?.paid_hours ?? 0).toFixed(2)} h`}
-          icon={<Wallet size={22} />}
-        />
+        <StatCard title="Today Status" value={currentStatus} icon={<Activity size={22} />} />
+        <StatCard title="Paid hours" value={`${Number(latest?.paid_hours ?? 0).toFixed(2)} h`} icon={<Wallet size={22} />} />
       </div>
 
       <Card className="overflow-hidden">
@@ -110,43 +107,27 @@ export default function DashboardPage() {
           <CalendarRange size={16} className="text-brand-blue" />
           <span>This Week (SAT → FRI)</span>
         </div>
-
         <div className="mt-4 grid grid-cols-2 gap-x-6 gap-y-4 text-sm">
           <div className="flex items-center gap-2">
             <BadgeDollarSign size={16} className="text-emerald-400" />
             <span>Paid: <b>{Number(weekly?.summary?.paid_hours ?? 0).toFixed(2)} h</b></span>
           </div>
-
           <div className="flex items-center gap-2">
             <CircleX size={16} className="text-red-400" />
             <span>Absent: <b>{weekly?.summary?.absent_days ?? 0} d</b></span>
           </div>
-
           <div className="flex items-center gap-2">
             <BriefcaseBusiness size={16} className="text-amber-300" />
             <span>Worked: <b>{Number(weekly?.summary?.worked_net_hours ?? 0).toFixed(2)} h</b></span>
           </div>
-
           <div className="flex items-center gap-2">
             <Landmark size={16} className="text-brand-blue" />
             <span>Total pay: <b>${Number(weekly?.summary?.total_pay ?? 0).toFixed(2)}</b></span>
           </div>
         </div>
-
-        {weekStart && weekEnd ? (
-          <div className="mt-4 rounded-xl border border-brand-line/70 bg-brand-bg/35 px-3 py-2 text-xs text-center text-brand-text/60 font-medium">
-            Period: {weekStart} to {weekEnd}
-          </div>
-        ) : null}
       </Card>
 
-      <CompactAnalytics
-        isAdmin={isAdmin}
-        today={today}
-        weekly={weekly}
-        adminOverview={adminOverview}
-        adminWeekly={adminWeekly}
-      />
+      <CompactAnalytics isAdmin={isAdmin} today={today} weekly={weekly} adminOverview={adminOverview} adminWeekly={adminWeekly} />
     </div>
   );
 }

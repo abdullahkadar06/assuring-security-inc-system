@@ -39,6 +39,16 @@ app.get("/", (req, res) => {
   res.json({ message: "API is running" });
 });
 
+// 🚀 KEEP-ALIVE PING (UptimeRobot endpoint)
+app.get("/api/ping", async (req, res) => {
+  try {
+    await pool.query("SELECT 1"); 
+    res.status(200).json({ message: "System is awake and healthy!" });
+  } catch (error) {
+    res.status(500).json({ message: "Database connection error" });
+  }
+});
+
 // Health check
 app.get("/api/health", async (req, res, next) => {
   try {
