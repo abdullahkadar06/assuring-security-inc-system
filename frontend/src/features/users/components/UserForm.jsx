@@ -29,7 +29,7 @@ export default function UserForm({ onSaved }) {
         password,
         role,
         hourly_rate: Number(hourly_rate || 0),
-        shift_id: shift_id ? Number(shift_id) : undefined
+        shift_id: shift_id ? Number(shift_id) : undefined,
       });
       showToast("User created");
       onSaved?.();
@@ -43,36 +43,37 @@ export default function UserForm({ onSaved }) {
   return (
     <form onSubmit={submit} className="space-y-3">
       <div>
-        <div className="text-sm text-brand-text/70 mb-1">Full name</div>
+        <div className="mb-1 text-sm text-brand-text/70">Full name</div>
         <Input value={full_name} onChange={(e) => setName(e.target.value)} />
       </div>
 
       <div>
-        <div className="text-sm text-brand-text/70 mb-1">Email</div>
+        <div className="mb-1 text-sm text-brand-text/70">Email</div>
         <Input value={email} onChange={(e) => setEmail(e.target.value)} />
       </div>
 
       <div className="grid grid-cols-2 gap-2">
         <div>
-          <div className="text-sm text-brand-text/70 mb-1">Phone</div>
+          <div className="mb-1 text-sm text-brand-text/70">Phone</div>
           <Input value={phone} onChange={(e) => setPhone(e.target.value)} />
         </div>
+
         <div>
-          <div className="text-sm text-brand-text/70 mb-1">Hourly rate</div>
+          <div className="mb-1 text-sm text-brand-text/70">Hourly rate</div>
           <Input value={hourly_rate} onChange={(e) => setRate(e.target.value)} />
         </div>
       </div>
 
       <div>
-        <div className="text-sm text-brand-text/70 mb-1">Address</div>
+        <div className="mb-1 text-sm text-brand-text/70">Address</div>
         <Input value={address} onChange={(e) => setAddress(e.target.value)} />
       </div>
 
       <div className="grid grid-cols-2 gap-2">
         <div>
-          <div className="text-sm text-brand-text/70 mb-1">Role</div>
+          <div className="mb-1 text-sm text-brand-text/70">Role</div>
           <select
-            className="w-full px-4 py-3 rounded-2xl bg-brand-card border border-brand-line"
+            className="w-full rounded-2xl border border-brand-line bg-brand-card px-4 py-3"
             value={role}
             onChange={(e) => setRole(e.target.value)}
           >
@@ -80,14 +81,15 @@ export default function UserForm({ onSaved }) {
             <option value="ADMIN">ADMIN</option>
           </select>
         </div>
+
         <div>
-          <div className="text-sm text-brand-text/70 mb-1">Shift ID</div>
+          <div className="mb-1 text-sm text-brand-text/70">Shift ID</div>
           <Input value={shift_id} onChange={(e) => setShiftId(e.target.value)} placeholder="1" />
         </div>
       </div>
 
       <div>
-        <div className="text-sm text-brand-text/70 mb-1">Password</div>
+        <div className="mb-1 text-sm text-brand-text/70">Password</div>
         <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
       </div>
 

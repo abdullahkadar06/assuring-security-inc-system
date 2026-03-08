@@ -41,7 +41,7 @@ export default function UsersPage() {
         <Card>No users.</Card>
       ) : (
         <div className="rounded-[28px] border border-brand-line/70 bg-brand-card/25 p-2">
-          <UserTable rows={users} />
+          <UserTable rows={users} reload={load} />
         </div>
       )}
 

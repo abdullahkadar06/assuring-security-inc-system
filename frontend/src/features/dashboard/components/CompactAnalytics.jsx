@@ -1,5 +1,7 @@
 import { useMemo, useState } from "react";
 import Card from "../../../components/ui/Card";
+import { exportExcel, exportPDF } from "../../../utils/exportDashboard";
+import { Download, FileSpreadsheet, RefreshCw, BarChart3 } from "lucide-react";
 
 function clampPercent(value) {
   const n = Number(value || 0);
@@ -17,23 +19,26 @@ function buildEmployeeData(period, today, weekly) {
 
   const factor = period === "daily" ? 1 : period === "weekly" ? 7 : 30;
 
-  const scoreA = period === "daily"
-    ? Math.min(100, worked * 12 + (currentStatus !== "NONE" ? 18 : 0))
-    : period === "weekly"
-    ? Math.min(100, worked * 7)
-    : Math.min(100, worked * 3 + paid * 2);
+  const scoreA =
+    period === "daily"
+      ? Math.min(100, worked * 12 + (currentStatus !== "NONE" ? 18 : 0))
+      : period === "weekly"
+      ? Math.min(100, worked * 7)
+      : Math.min(100, worked * 3 + paid * 2);
 
-  const scoreB = period === "daily"
-    ? Math.min(100, paid * 12)
-    : period === "weekly"
-    ? Math.min(100, paid * 8)
-    : Math.min(100, paid * 3 + totalPay / 10);
+  const scoreB =
+    period === "daily"
+      ? Math.min(100, paid * 12)
+      : period === "weekly"
+      ? Math.min(100, paid * 8)
+      : Math.min(100, paid * 3 + totalPay / 10);
 
-  const scoreC = period === "daily"
-    ? Math.max(5, 20 - absent * 5)
-    : period === "weekly"
-    ? Math.max(8, 40 - absent * 8)
-    : Math.max(10, 55 - absent * 5);
+  const scoreC =
+    period === "daily"
+      ? Math.max(5, 20 - absent * 5)
+      : period === "weekly"
+      ? Math.max(8, 40 - absent * 8)
+      : Math.max(10, 55 - absent * 5);
 
   return {
     label: period === "daily" ? "Daily Analysis" : period === "weekly" ? "Weekly Analysis" : "Monthly Analysis",
@@ -47,21 +52,18 @@ function buildEmployeeData(period, today, weekly) {
       {
         name: "Low",
         color: "bg-red-500",
-        soft: "bg-red-500/15",
         value: clampPercent(Math.round(scoreC)),
         hint: period === "daily" ? "Risk / gaps" : period === "weekly" ? "Attendance gaps" : "Monthly gaps",
       },
       {
         name: "Middle",
         color: "bg-amber-400",
-        soft: "bg-amber-400/15",
         value: clampPercent(Math.round((scoreA + scoreB) / 2)),
         hint: period === "daily" ? "Balanced work" : period === "weekly" ? "General consistency" : "Stable output",
       },
       {
         name: "High",
         color: "bg-emerald-500",
-        soft: "bg-emerald-500/15",
         value: clampPercent(Math.round(scoreA + 10)),
         hint: period === "daily" ? "Completed effort" : period === "weekly" ? "Strong performance" : "Growth level",
       },
@@ -74,7 +76,7 @@ function buildEmployeeData(period, today, weekly) {
       { key: "D5", value: clampPercent(Math.round(scoreB * 0.92)) },
       { key: "D6", value: clampPercent(Math.round(scoreC * 0.66)) },
       { key: "D7", value: clampPercent(Math.round((scoreA + scoreB) / 2)) },
-    ].slice(0, factor === 1 ? 4 : factor === 7 ? 7 : 7),
+    ].slice(0, factor === 1 ? 4 : 7),
   };
 }
 
@@ -106,21 +108,18 @@ function buildAdminData(period, overview, weekly) {
       {
         name: "Low",
         color: "bg-red-500",
-        soft: "bg-red-500/15",
         value: clampPercent(Math.round((absenceRisk + delayRisk) * multiplier)),
         hint: "Risk / absence",
       },
       {
         name: "Middle",
         color: "bg-amber-400",
-        soft: "bg-amber-400/15",
         value: clampPercent(Math.round((worked + paid) * 0.6 * multiplier)),
         hint: "Mid activity",
       },
       {
         name: "High",
         color: "bg-emerald-500",
-        soft: "bg-emerald-500/15",
         value: clampPercent(Math.round((attendanceHealth + totalPay / 20) * multiplier)),
         hint: "Healthy system",
       },
@@ -146,7 +145,7 @@ function SegmentButton({ active, children, onClick }) {
         "flex-1 rounded-xl px-3 py-2 text-xs font-semibold transition-all duration-200",
         active
           ? "bg-brand-blue text-white shadow-soft"
-          : "bg-brand-bg/50 text-brand-text/70 hover:bg-brand-card hover:text-brand-text"
+          : "bg-brand-bg/50 text-brand-text/70 hover:bg-brand-card hover:text-brand-text",
       ].join(" ")}
     >
       {children}
@@ -192,12 +191,70 @@ export default function CompactAnalytics({
       : buildEmployeeData(period, today, weekly);
   }, [isAdmin, period, today, weekly, adminOverview, adminWeekly]);
 
+  const exportRows = useMemo(() => {
+    const summary = isAdmin
+      ? {
+          period,
+          total_staff: adminOverview?.summary?.total_staff ?? 0,
+          present: adminOverview?.summary?.present ?? 0,
+          absent: adminOverview?.summary?.absent ?? 0,
+          late: adminOverview?.summary?.late ?? 0,
+          worked_hours: adminWeekly?.summary?.worked_hours ?? 0,
+          paid_hours: adminWeekly?.summary?.paid_hours ?? 0,
+          total_pay: adminWeekly?.summary?.total_pay ?? 0,
+        }
+      : {
+          period,
+          status: today?.[0]?.status || "NONE",
+          worked_hours: weekly?.summary?.worked_net_hours ?? 0,
+          paid_hours: weekly?.summary?.paid_hours ?? 0,
+          absent_days: weekly?.summary?.absent_days ?? 0,
+          total_pay: weekly?.summary?.total_pay ?? 0,
+        };
+
+    return [summary];
+  }, [isAdmin, period, today, weekly, adminOverview, adminWeekly]);
+
+  const fileName = isAdmin ? `admin-${period}-analytics` : `employee-${period}-analytics`;
+
   return (
     <Card className="overflow-hidden">
       <div className="flex items-start justify-between gap-3">
-        <div>
-          <div className="text-sm font-semibold text-brand-text/85">{data.label}</div>
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 text-sm font-semibold text-brand-text/85">
+            <BarChart3 size={16} className="text-brand-blue" />
+            <span>{data.label}</span>
+          </div>
+
           <div className="mt-1 text-xs text-brand-text/55">{data.subtitle}</div>
+        </div>
+
+        <div className="flex shrink-0 items-center gap-2">
+          <button
+            type="button"
+            onClick={() => window.location.reload()}
+            className="flex h-10 w-10 items-center justify-center rounded-xl border border-brand-line bg-brand-bg/45 text-brand-text/80 transition-all duration-200 hover:-translate-y-[1px] hover:border-brand-blue/50 hover:bg-brand-blue/10"
+          >
+            <RefreshCw size={16} />
+          </button>
+
+          <button
+            type="button"
+            onClick={() => exportExcel(exportRows, fileName)}
+            className="inline-flex items-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/15 px-3 py-2 text-xs font-semibold text-emerald-300 transition-all duration-200 hover:-translate-y-[1px] hover:bg-emerald-500/20"
+          >
+            <FileSpreadsheet size={15} />
+            <span>Excel</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => exportPDF(exportRows, fileName)}
+            className="inline-flex items-center gap-2 rounded-xl border border-red-500/30 bg-red-500/15 px-3 py-2 text-xs font-semibold text-red-300 transition-all duration-200 hover:-translate-y-[1px] hover:bg-red-500/20"
+          >
+            <Download size={15} />
+            <span>PDF</span>
+          </button>
         </div>
       </div>
 
@@ -232,7 +289,7 @@ export default function CompactAnalytics({
                         ? "bg-red-500/85"
                         : index % 3 === 1
                         ? "bg-amber-400/85"
-                        : "bg-emerald-500/85"
+                        : "bg-emerald-500/85",
                     ].join(" ")}
                     style={{ height: `${Math.max(14, bar.value)}%` }}
                   />
