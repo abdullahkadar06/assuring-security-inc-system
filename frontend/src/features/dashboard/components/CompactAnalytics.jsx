@@ -1,7 +1,12 @@
 import { useMemo, useState } from "react";
 import Card from "../../../components/ui/Card";
 import { exportExcel, exportPDF } from "../../../utils/exportDashboard";
-import { Download, FileSpreadsheet, RefreshCw, BarChart3 } from "lucide-react";
+import {
+  Download,
+  FileSpreadsheet,
+  RefreshCw,
+  BarChart3,
+} from "lucide-react";
 
 function clampPercent(value) {
   const n = Number(value || 0);
@@ -15,15 +20,22 @@ function buildEmployeeData(period, today, weekly) {
   const paid = Number(weekly?.summary?.paid_hours ?? 0);
   const absent = Number(weekly?.summary?.absent_days ?? 0);
   const totalPay = Number(weekly?.summary?.total_pay ?? 0);
+  const weeklyBreakMinutes = Number(weekly?.summary?.break_minutes ?? 0);
+  const todayBreakMinutes = Number(today?.[0]?.break_minutes ?? 0);
   const currentStatus = today?.[0]?.status || "NONE";
 
   const factor = period === "daily" ? 1 : period === "weekly" ? 7 : 30;
 
   const scoreA =
     period === "daily"
-      ? Math.min(100, worked * 12 + (currentStatus !== "NONE" ? 18 : 0))
+      ? Math.min(
+          100,
+          worked * 12 +
+            (currentStatus !== "NONE" ? 18 : 0) +
+            todayBreakMinutes * 0.2
+        )
       : period === "weekly"
-      ? Math.min(100, worked * 7)
+      ? Math.min(100, worked * 7 + weeklyBreakMinutes * 0.12)
       : Math.min(100, worked * 3 + paid * 2);
 
   const scoreB =
@@ -41,7 +53,12 @@ function buildEmployeeData(period, today, weekly) {
       : Math.max(10, 55 - absent * 5);
 
   return {
-    label: period === "daily" ? "Daily Analysis" : period === "weekly" ? "Weekly Analysis" : "Monthly Analysis",
+    label:
+      period === "daily"
+        ? "Daily Analysis"
+        : period === "weekly"
+        ? "Weekly Analysis"
+        : "Monthly Analysis",
     subtitle:
       period === "daily"
         ? "Today activity snapshot"
@@ -53,19 +70,34 @@ function buildEmployeeData(period, today, weekly) {
         name: "Low",
         color: "bg-red-500",
         value: clampPercent(Math.round(scoreC)),
-        hint: period === "daily" ? "Risk / gaps" : period === "weekly" ? "Attendance gaps" : "Monthly gaps",
+        hint:
+          period === "daily"
+            ? "Risk / gaps"
+            : period === "weekly"
+            ? "Attendance gaps"
+            : "Monthly gaps",
       },
       {
         name: "Middle",
         color: "bg-amber-400",
         value: clampPercent(Math.round((scoreA + scoreB) / 2)),
-        hint: period === "daily" ? "Balanced work" : period === "weekly" ? "General consistency" : "Stable output",
+        hint:
+          period === "daily"
+            ? "Balanced work"
+            : period === "weekly"
+            ? "General consistency"
+            : "Stable output",
       },
       {
         name: "High",
         color: "bg-emerald-500",
         value: clampPercent(Math.round(scoreA + 10)),
-        hint: period === "daily" ? "Completed effort" : period === "weekly" ? "Strong performance" : "Growth level",
+        hint:
+          period === "daily"
+            ? "Completed effort"
+            : period === "weekly"
+            ? "Strong performance"
+            : "Growth level",
       },
     ],
     miniBars: [
@@ -94,10 +126,16 @@ function buildAdminData(period, overview, weekly) {
   const delayRisk = totalStaff > 0 ? (late / totalStaff) * 100 : 0;
   const absenceRisk = totalStaff > 0 ? (absent / totalStaff) * 100 : 0;
 
-  const multiplier = period === "daily" ? 1 : period === "weekly" ? 1.3 : 1.6;
+  const multiplier =
+    period === "daily" ? 1 : period === "weekly" ? 1.3 : 1.6;
 
   return {
-    label: period === "daily" ? "Daily Admin Analysis" : period === "weekly" ? "Weekly Admin Analysis" : "Monthly Admin Analysis",
+    label:
+      period === "daily"
+        ? "Daily Admin Analysis"
+        : period === "weekly"
+        ? "Weekly Admin Analysis"
+        : "Monthly Admin Analysis",
     subtitle:
       period === "daily"
         ? "System attendance snapshot"
@@ -120,7 +158,9 @@ function buildAdminData(period, overview, weekly) {
       {
         name: "High",
         color: "bg-emerald-500",
-        value: clampPercent(Math.round((attendanceHealth + totalPay / 20) * multiplier)),
+        value: clampPercent(
+          Math.round((attendanceHealth + totalPay / 20) * multiplier)
+        ),
         hint: "Healthy system",
       },
     ],
@@ -131,7 +171,10 @@ function buildAdminData(period, overview, weekly) {
       { key: "A4", value: clampPercent(Math.round(worked * 1.4)) },
       { key: "A5", value: clampPercent(Math.round(paid * 1.55)) },
       { key: "A6", value: clampPercent(Math.round(totalPay / 18)) },
-      { key: "A7", value: clampPercent(Math.round((attendanceHealth + paid) * 0.55)) },
+      {
+        key: "A7",
+        value: clampPercent(Math.round((attendanceHealth + paid) * 0.55)),
+      },
     ],
   };
 }
@@ -210,12 +253,16 @@ export default function CompactAnalytics({
           paid_hours: weekly?.summary?.paid_hours ?? 0,
           absent_days: weekly?.summary?.absent_days ?? 0,
           total_pay: weekly?.summary?.total_pay ?? 0,
+          break_today_minutes: today?.[0]?.break_minutes ?? 0,
+          weekly_break_minutes: weekly?.summary?.break_minutes ?? 0,
         };
 
     return [summary];
   }, [isAdmin, period, today, weekly, adminOverview, adminWeekly]);
 
-  const fileName = isAdmin ? `admin-${period}-analytics` : `employee-${period}-analytics`;
+  const fileName = isAdmin
+    ? `admin-${period}-analytics`
+    : `employee-${period}-analytics`;
 
   return (
     <Card className="overflow-hidden">
@@ -259,13 +306,24 @@ export default function CompactAnalytics({
       </div>
 
       <div className="mt-4 flex gap-2 rounded-2xl border border-brand-line/70 bg-brand-bg/35 p-1.5">
-        <SegmentButton active={period === "daily"} onClick={() => setPeriod("daily")}>
+        <SegmentButton
+          active={period === "daily"}
+          onClick={() => setPeriod("daily")}
+        >
           Daily
         </SegmentButton>
-        <SegmentButton active={period === "weekly"} onClick={() => setPeriod("weekly")}>
+
+        <SegmentButton
+          active={period === "weekly"}
+          onClick={() => setPeriod("weekly")}
+        >
           Weekly
         </SegmentButton>
-        <SegmentButton active={period === "monthly"} onClick={() => setPeriod("monthly")}>
+
+        <SegmentButton
+          active={period === "monthly"}
+          onClick={() => setPeriod("monthly")}
+        >
           Monthly
         </SegmentButton>
       </div>
@@ -280,7 +338,10 @@ export default function CompactAnalytics({
         <div className="rounded-2xl border border-brand-line/70 bg-brand-bg/35 p-3">
           <div className="flex h-full items-end justify-between gap-2">
             {data.miniBars.map((bar, index) => (
-              <div key={bar.key} className="flex flex-1 flex-col items-center justify-end gap-2">
+              <div
+                key={bar.key}
+                className="flex flex-1 flex-col items-center justify-end gap-2"
+              >
                 <div className="flex h-28 w-full items-end">
                   <div
                     className={[
@@ -294,7 +355,10 @@ export default function CompactAnalytics({
                     style={{ height: `${Math.max(14, bar.value)}%` }}
                   />
                 </div>
-                <span className="text-[10px] text-brand-text/45">{bar.key}</span>
+
+                <span className="text-[10px] text-brand-text/45">
+                  {bar.key}
+                </span>
               </div>
             ))}
           </div>

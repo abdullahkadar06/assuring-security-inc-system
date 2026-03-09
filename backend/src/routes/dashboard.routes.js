@@ -32,22 +32,39 @@ router.get("/me/today", requireAuth, async (req, res, next) => {
     const r = await pool.query(
       `
       SELECT
-        id,
-        user_id,
-        shift_id,
-        clock_in,
-        clock_out,
-        total_hours,
-        paid_hours,
-        status,
-        scheduled_start,
-        scheduled_end,
-        created_at
-      FROM attendance
-      WHERE user_id = $1
-        AND scheduled_start IS NOT NULL
-        AND scheduled_start::date = CURRENT_DATE
-      ORDER BY id DESC
+        a.id,
+        a.user_id,
+        a.shift_id,
+        a.clock_in,
+        a.clock_out,
+        a.total_hours,
+        a.paid_hours,
+        a.status,
+        a.scheduled_start,
+        a.scheduled_end,
+        a.created_at,
+        COALESCE(
+          ROUND(
+            SUM(
+              EXTRACT(
+                EPOCH FROM (
+                  COALESCE(b.break_end, NOW()) - b.break_start
+                )
+              )
+            ) / 60.0,
+            2
+          ),
+          0
+        ) AS break_minutes
+      FROM attendance a
+      LEFT JOIN breaks b
+        ON b.attendance_id = a.id
+       AND b.break_start IS NOT NULL
+      WHERE a.user_id = $1
+        AND a.scheduled_start IS NOT NULL
+        AND a.scheduled_start::date = CURRENT_DATE
+      GROUP BY a.id
+      ORDER BY a.id DESC
       `,
       [req.user.id]
     );
@@ -64,21 +81,82 @@ router.get("/me/weekly", requireAuth, async (req, res, next) => {
     const weekStartISO = toISODate(weekStart);
     const weekEndISO = toISODate(weekEnd);
 
-    // summary: payroll table kuma tiirsana si 500 looga baxo
     const summary = await pool.query(
       `
-      WITH att AS (
+      WITH att_base AS (
         SELECT
-          COUNT(*) FILTER (WHERE a.status = 'CLOSED') AS shifts_closed,
-          COALESCE(SUM(a.total_hours), 0) AS worked_net_hours,
-          COALESCE(SUM(a.paid_hours), 0) AS paid_hours,
-          COALESCE(SUM(a.paid_hours * COALESCE(u.hourly_rate, 0)), 0) AS total_pay
+          a.id,
+          a.user_id,
+          a.status,
+          a.scheduled_start,
+          a.clock_in,
+          a.clock_out,
+          COALESCE(u.hourly_rate, 0) AS hourly_rate,
+          COALESCE(
+            SUM(
+              EXTRACT(
+                EPOCH FROM (
+                  COALESCE(b.break_end, NOW()) - b.break_start
+                )
+              )
+            ),
+            0
+          ) AS break_seconds
         FROM attendance a
-        JOIN users u ON u.id = a.user_id
+        JOIN users u
+          ON u.id = a.user_id
+        LEFT JOIN breaks b
+          ON b.attendance_id = a.id
+         AND b.break_start IS NOT NULL
         WHERE a.user_id = $1
           AND a.scheduled_start IS NOT NULL
           AND a.scheduled_start::date BETWEEN $2::date AND $3::date
-          AND a.status = 'CLOSED'
+        GROUP BY a.id, u.hourly_rate
+      ),
+      att AS (
+        SELECT
+          COUNT(*) FILTER (WHERE status = 'CLOSED') AS shifts_closed,
+          COALESCE(
+            SUM(
+              CASE
+                WHEN status = 'CLOSED' AND clock_in IS NOT NULL AND clock_out IS NOT NULL
+                  THEN GREATEST(EXTRACT(EPOCH FROM (clock_out - clock_in)) - break_seconds, 0) / 3600.0
+                ELSE 0
+              END
+            ),
+            0
+          ) AS worked_net_hours,
+          COALESCE(
+            SUM(
+              CASE
+                WHEN status = 'CLOSED' AND clock_in IS NOT NULL AND clock_out IS NOT NULL
+                  THEN GREATEST(EXTRACT(EPOCH FROM (clock_out - clock_in)) - break_seconds, 0) / 3600.0
+                ELSE 0
+              END
+            ),
+            0
+          ) AS paid_hours,
+          COALESCE(
+            SUM(
+              CASE
+                WHEN status = 'CLOSED'
+                  THEN break_seconds / 60.0
+                ELSE 0
+              END
+            ),
+            0
+          ) AS break_minutes,
+          COALESCE(
+            SUM(
+              CASE
+                WHEN status = 'CLOSED' AND clock_in IS NOT NULL AND clock_out IS NOT NULL
+                  THEN (GREATEST(EXTRACT(EPOCH FROM (clock_out - clock_in)) - break_seconds, 0) / 3600.0) * hourly_rate
+                ELSE 0
+              END
+            ),
+            0
+          ) AS total_pay
+        FROM att_base
       ),
       abs AS (
         SELECT COUNT(*) AS absent_days
@@ -88,10 +166,11 @@ router.get("/me/weekly", requireAuth, async (req, res, next) => {
       )
       SELECT
         COALESCE((SELECT shifts_closed FROM att), 0) AS shifts_closed,
-        COALESCE((SELECT worked_net_hours FROM att), 0) AS worked_net_hours,
-        COALESCE((SELECT paid_hours FROM att), 0) AS paid_hours,
+        ROUND(COALESCE((SELECT worked_net_hours FROM att), 0)::numeric, 2) AS worked_net_hours,
+        ROUND(COALESCE((SELECT paid_hours FROM att), 0)::numeric, 2) AS paid_hours,
+        ROUND(COALESCE((SELECT break_minutes FROM att), 0)::numeric, 2) AS break_minutes,
         COALESCE((SELECT absent_days FROM abs), 0) AS absent_days,
-        COALESCE((SELECT total_pay FROM att), 0) AS total_pay
+        ROUND(COALESCE((SELECT total_pay FROM att), 0)::numeric, 2) AS total_pay
       `,
       [req.user.id, weekStartISO, weekEndISO]
     );
@@ -99,20 +178,37 @@ router.get("/me/weekly", requireAuth, async (req, res, next) => {
     const attendance = await pool.query(
       `
       SELECT
-        id,
-        shift_id,
-        clock_in,
-        clock_out,
-        total_hours,
-        paid_hours,
-        status,
-        scheduled_start,
-        scheduled_end
-      FROM attendance
-      WHERE user_id = $1
-        AND scheduled_start IS NOT NULL
-        AND scheduled_start::date BETWEEN $2::date AND $3::date
-      ORDER BY id DESC
+        a.id,
+        a.shift_id,
+        a.clock_in,
+        a.clock_out,
+        a.total_hours,
+        a.paid_hours,
+        a.status,
+        a.scheduled_start,
+        a.scheduled_end,
+        COALESCE(
+          ROUND(
+            SUM(
+              EXTRACT(
+                EPOCH FROM (
+                  COALESCE(b.break_end, NOW()) - b.break_start
+                )
+              )
+            ) / 60.0,
+            2
+          ),
+          0
+        ) AS break_minutes
+      FROM attendance a
+      LEFT JOIN breaks b
+        ON b.attendance_id = a.id
+       AND b.break_start IS NOT NULL
+      WHERE a.user_id = $1
+        AND a.scheduled_start IS NOT NULL
+        AND a.scheduled_start::date BETWEEN $2::date AND $3::date
+      GROUP BY a.id
+      ORDER BY a.id DESC
       `,
       [req.user.id, weekStartISO, weekEndISO]
     );
@@ -125,6 +221,7 @@ router.get("/me/weekly", requireAuth, async (req, res, next) => {
         shifts_closed: 0,
         worked_net_hours: 0,
         paid_hours: 0,
+        break_minutes: 0,
         absent_days: 0,
         total_pay: 0,
       },
@@ -138,10 +235,14 @@ router.get("/me/weekly", requireAuth, async (req, res, next) => {
 /**
  * ADMIN OVERVIEW
  */
-router.get("/admin/overview", requireAuth, requireRole("ADMIN"), async (req, res, next) => {
-  try {
-    const overview = await pool.query(
-      `
+router.get(
+  "/admin/overview",
+  requireAuth,
+  requireRole("ADMIN"),
+  async (req, res, next) => {
+    try {
+      const overview = await pool.query(
+        `
       WITH staff AS (
         SELECT COUNT(*)::int AS total_staff
         FROM users
@@ -166,49 +267,108 @@ router.get("/admin/overview", requireAuth, requireRole("ADMIN"), async (req, res
         COALESCE((SELECT absent_today FROM today_abs), 0) AS absent,
         COALESCE((SELECT late_today FROM today_att), 0) AS late
       `
-    );
+      );
 
-    const row = overview.rows[0] || {
-      total_staff: 0,
-      present: 0,
-      absent: 0,
-      late: 0,
-    };
+      const row = overview.rows[0] || {
+        total_staff: 0,
+        present: 0,
+        absent: 0,
+        late: 0,
+      };
 
-    res.json({
-      summary: row,
-      distribution: [
-        { name: "Present", value: Number(row.present || 0) },
-        { name: "Absent", value: Number(row.absent || 0) },
-        { name: "Late", value: Number(row.late || 0) },
-      ],
-    });
-  } catch (e) {
-    next(e);
+      res.json({
+        summary: row,
+        distribution: [
+          { name: "Present", value: Number(row.present || 0) },
+          { name: "Absent", value: Number(row.absent || 0) },
+          { name: "Late", value: Number(row.late || 0) },
+        ],
+      });
+    } catch (e) {
+      next(e);
+    }
   }
-});
+);
 
 /**
  * ADMIN WEEKLY
  */
-router.get("/admin/weekly", requireAuth, requireRole("ADMIN"), async (req, res, next) => {
-  try {
-    const { weekStart, weekEnd } = payrollWindowByFriday(new Date());
-    const weekStartISO = toISODate(weekStart);
-    const weekEndISO = toISODate(weekEnd);
+router.get(
+  "/admin/weekly",
+  requireAuth,
+  requireRole("ADMIN"),
+  async (req, res, next) => {
+    try {
+      const { weekStart, weekEnd } = payrollWindowByFriday(new Date());
+      const weekStartISO = toISODate(weekStart);
+      const weekEndISO = toISODate(weekEnd);
 
-    const summary = await pool.query(
-      `
-      WITH att AS (
+      const summary = await pool.query(
+        `
+      WITH att_base AS (
         SELECT
-          COALESCE(SUM(a.total_hours), 0) AS worked_hours,
-          COALESCE(SUM(a.paid_hours), 0) AS paid_hours,
-          COUNT(*) FILTER (WHERE a.late_minutes > 0) AS late_count,
-          COALESCE(SUM(a.paid_hours * COALESCE(u.hourly_rate, 0)), 0) AS total_pay
+          a.id,
+          a.user_id,
+          a.status,
+          a.scheduled_start,
+          a.clock_in,
+          a.clock_out,
+          COALESCE(u.hourly_rate, 0) AS hourly_rate,
+          COALESCE(
+            SUM(
+              EXTRACT(
+                EPOCH FROM (
+                  COALESCE(b.break_end, NOW()) - b.break_start
+                )
+              )
+            ),
+            0
+          ) AS break_seconds,
+          a.late_minutes
         FROM attendance a
-        JOIN users u ON u.id = a.user_id
+        JOIN users u
+          ON u.id = a.user_id
+        LEFT JOIN breaks b
+          ON b.attendance_id = a.id
+         AND b.break_start IS NOT NULL
         WHERE a.scheduled_start IS NOT NULL
           AND a.scheduled_start::date BETWEEN $1::date AND $2::date
+        GROUP BY a.id, u.hourly_rate
+      ),
+      att AS (
+        SELECT
+          COALESCE(
+            SUM(
+              CASE
+                WHEN status = 'CLOSED' AND clock_in IS NOT NULL AND clock_out IS NOT NULL
+                  THEN GREATEST(EXTRACT(EPOCH FROM (clock_out - clock_in)) - break_seconds, 0) / 3600.0
+                ELSE 0
+              END
+            ),
+            0
+          ) AS worked_hours,
+          COALESCE(
+            SUM(
+              CASE
+                WHEN status = 'CLOSED' AND clock_in IS NOT NULL AND clock_out IS NOT NULL
+                  THEN GREATEST(EXTRACT(EPOCH FROM (clock_out - clock_in)) - break_seconds, 0) / 3600.0
+                ELSE 0
+              END
+            ),
+            0
+          ) AS paid_hours,
+          COUNT(*) FILTER (WHERE late_minutes > 0) AS late_count,
+          COALESCE(
+            SUM(
+              CASE
+                WHEN status = 'CLOSED' AND clock_in IS NOT NULL AND clock_out IS NOT NULL
+                  THEN (GREATEST(EXTRACT(EPOCH FROM (clock_out - clock_in)) - break_seconds, 0) / 3600.0) * hourly_rate
+                ELSE 0
+              END
+            ),
+            0
+          ) AS total_pay
+        FROM att_base
       ),
       abs AS (
         SELECT COUNT(*) AS absent_days
@@ -216,29 +376,30 @@ router.get("/admin/weekly", requireAuth, requireRole("ADMIN"), async (req, res, 
         WHERE work_date BETWEEN $1::date AND $2::date
       )
       SELECT
-        COALESCE((SELECT worked_hours FROM att), 0) AS worked_hours,
-        COALESCE((SELECT paid_hours FROM att), 0) AS paid_hours,
+        ROUND(COALESCE((SELECT worked_hours FROM att), 0)::numeric, 2) AS worked_hours,
+        ROUND(COALESCE((SELECT paid_hours FROM att), 0)::numeric, 2) AS paid_hours,
         COALESCE((SELECT late_count FROM att), 0) AS late_count,
         COALESCE((SELECT absent_days FROM abs), 0) AS absent_days,
-        COALESCE((SELECT total_pay FROM att), 0) AS total_pay
+        ROUND(COALESCE((SELECT total_pay FROM att), 0)::numeric, 2) AS total_pay
       `,
-      [weekStartISO, weekEndISO]
-    );
+        [weekStartISO, weekEndISO]
+      );
 
-    res.json({
-      week_start: weekStartISO,
-      week_end: weekEndISO,
-      summary: summary.rows[0] || {
-        worked_hours: 0,
-        paid_hours: 0,
-        late_count: 0,
-        absent_days: 0,
-        total_pay: 0,
-      },
-    });
-  } catch (e) {
-    next(e);
+      res.json({
+        week_start: weekStartISO,
+        week_end: weekEndISO,
+        summary: summary.rows[0] || {
+          worked_hours: 0,
+          paid_hours: 0,
+          late_count: 0,
+          absent_days: 0,
+          total_pay: 0,
+        },
+      });
+    } catch (e) {
+      next(e);
+    }
   }
-});
+);
 
 export default router;
