@@ -17,9 +17,24 @@ export default function LoginForm() {
 
   const onSubmit = async (e) => {
     e.preventDefault();
+
+    if (!email.trim()) {
+      showToast("Email is required", "error");
+      return;
+    }
+
+    if (!password.trim()) {
+      showToast("Password is required", "error");
+      return;
+    }
+
     setBusy(true);
     try {
-      const data = await authApi.login({ email, password });
+      const data = await authApi.login({
+        email: email.trim(),
+        password,
+      });
+
       setAuth({ token: data.token, user: data.user });
       showToast("Welcome!");
       nav("/", { replace: true });
@@ -33,14 +48,30 @@ export default function LoginForm() {
   return (
     <form onSubmit={onSubmit} className="space-y-3">
       <div>
-        <div className="text-sm text-brand-text/70 mb-1">Email</div>
-        <Input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="name@email.com" />
+        <div className="mb-1 text-sm text-brand-text/70">Email</div>
+        <Input
+          type="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          placeholder="name@email.com"
+          autoComplete="email"
+        />
       </div>
+
       <div>
-        <div className="text-sm text-brand-text/70 mb-1">Password</div>
-        <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="******" />
+        <div className="mb-1 text-sm text-brand-text/70">Password</div>
+        <Input
+          type="password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          placeholder="******"
+          autoComplete="current-password"
+        />
       </div>
-      <Button disabled={busy}>{busy ? "Signing in..." : "Login"}</Button>
+
+      <Button type="submit" disabled={busy}>
+        {busy ? "Signing in..." : "Login"}
+      </Button>
     </form>
   );
 }
