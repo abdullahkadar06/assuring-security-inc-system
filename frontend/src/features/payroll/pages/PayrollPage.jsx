@@ -39,7 +39,6 @@ export default function PayrollPage() {
   useEffect(() => {
     let isMounted = true;
 
-    // Nidaamka Silent Auto-Retry ee ka hortagaya Database Error-ka
     const initData = async (retryCount = 1) => {
       try {
         if (!isAdmin) {
@@ -58,11 +57,13 @@ export default function PayrollPage() {
         await loadPayrollForUser(defaultId);
         if (isMounted) setBusy(false);
       } catch (e) {
-        // Haddii DB uu hurdo, si aamusnaan ah ayuu dib isugu dayayaa
         if (retryCount > 0 && isMounted) {
           setTimeout(() => initData(retryCount - 1), 2500);
         } else if (isMounted) {
-          showToast(e?.response?.data?.message || "Payroll load failed", "error");
+          showToast(
+            e?.response?.data?.message || "Payroll load failed",
+            "error"
+          );
           setBusy(false);
         }
       }
@@ -71,10 +72,24 @@ export default function PayrollPage() {
     setBusy(true);
     initData();
 
+    const handleRefresh = async () => {
+      try {
+        const targetUserId = Number(selectedUserId || user.id);
+        await loadPayrollForUser(targetUserId);
+      } catch {}
+    };
+
+    window.addEventListener("attendance:changed", handleRefresh);
+    window.addEventListener("break:changed", handleRefresh);
+    window.addEventListener("payroll:changed", handleRefresh);
+
     return () => {
       isMounted = false;
+      window.removeEventListener("attendance:changed", handleRefresh);
+      window.removeEventListener("break:changed", handleRefresh);
+      window.removeEventListener("payroll:changed", handleRefresh);
     };
-  }, [isAdmin, user?.id, showToast]);
+  }, [isAdmin, user?.id, selectedUserId, showToast]);
 
   const onAdminLoad = async () => {
     if (!selectedUserId) return showToast("Select a user", "error");
@@ -100,6 +115,7 @@ export default function PayrollPage() {
     try {
       await payrollApi.recalculate({ attendance_id: Number(attendance_id) });
       await loadPayrollForUser(Number(selectedUserId || user.id));
+      window.dispatchEvent(new Event("payroll:changed"));
       showToast("Payroll recalculated successfully", "success");
     } catch (e) {
       showToast(e?.response?.data?.message || "Recalculate failed", "error");
@@ -177,7 +193,10 @@ export default function PayrollPage() {
                 <Calculator size={16} className="text-red-400" />
                 <span>Recalculate</span>
               </div>
-              <Button className="bg-brand-red border-brand-red hover:bg-red-600" onClick={onRecalculate}>
+              <Button
+                className="bg-brand-red border-brand-red hover:bg-red-600"
+                onClick={onRecalculate}
+              >
                 Recalculate
               </Button>
             </div>

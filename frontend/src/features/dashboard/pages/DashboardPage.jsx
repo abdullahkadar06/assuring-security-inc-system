@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Loader from "../../../components/ui/Loader";
 import Card from "../../../components/ui/Card";
 import StatCard from "../components/StatCard";
@@ -47,56 +47,61 @@ export default function DashboardPage() {
   const [adminOverview, setAdminOverview] = useState(null);
   const [adminWeekly, setAdminWeekly] = useState(null);
 
-  useEffect(() => {
-    let isMounted = true;
-
-    const loadDashboardData = async (retryCount = 1) => {
+  const loadDashboardData = useCallback(
+    async (retryCount = 1) => {
       try {
-        const t = await dashboardApi.meToday();
-        const w = await dashboardApi.meWeekly();
+        setBusy(true);
 
-        if (isMounted) {
-          setToday(t?.today || []);
-          setWeekly(w || null);
-        }
+        const [t, w] = await Promise.all([
+          dashboardApi.meToday(),
+          dashboardApi.meWeekly(),
+        ]);
+
+        setToday(t?.today || []);
+        setWeekly(w || null);
 
         if (isAdmin) {
-          try {
-            const ao = await dashboardApi.adminOverview();
-            if (isMounted) setAdminOverview(ao || null);
-          } catch {
-            if (isMounted) setAdminOverview(null);
-          }
+          const [ao, aw] = await Promise.allSettled([
+            dashboardApi.adminOverview(),
+            dashboardApi.adminWeekly(),
+          ]);
 
-          try {
-            const aw = await dashboardApi.adminWeekly();
-            if (isMounted) setAdminWeekly(aw || null);
-          } catch {
-            if (isMounted) setAdminWeekly(null);
-          }
+          setAdminOverview(ao.status === "fulfilled" ? ao.value : null);
+          setAdminWeekly(aw.status === "fulfilled" ? aw.value : null);
+        } else {
+          setAdminOverview(null);
+          setAdminWeekly(null);
         }
-
-        if (isMounted) setBusy(false);
       } catch (e) {
-        if (retryCount > 0 && isMounted) {
+        if (retryCount > 0) {
           setTimeout(() => loadDashboardData(retryCount - 1), 2500);
-        } else if (isMounted) {
-          showToast(
-            e?.response?.data?.message || "Dashboard load failed",
-            "error"
-          );
-          setBusy(false);
+          return;
         }
+        showToast(
+          e?.response?.data?.message || "Dashboard load failed",
+          "error"
+        );
+      } finally {
+        setBusy(false);
       }
-    };
+    },
+    [isAdmin, showToast]
+  );
 
-    setBusy(true);
+  useEffect(() => {
     loadDashboardData();
 
+    const handleRefresh = () => loadDashboardData(0);
+    window.addEventListener("attendance:changed", handleRefresh);
+    window.addEventListener("break:changed", handleRefresh);
+    window.addEventListener("payroll:changed", handleRefresh);
+
     return () => {
-      isMounted = false;
+      window.removeEventListener("attendance:changed", handleRefresh);
+      window.removeEventListener("break:changed", handleRefresh);
+      window.removeEventListener("payroll:changed", handleRefresh);
     };
-  }, [showToast, isAdmin]);
+  }, [loadDashboardData]);
 
   if (busy) return <Loader label="Loading dashboard..." />;
 
@@ -182,7 +187,8 @@ export default function DashboardPage() {
           <div className="flex items-center gap-2">
             <BriefcaseBusiness size={16} className="text-amber-300" />
             <span>
-              Worked: <b>{formatHours(weekly?.summary?.worked_net_hours ?? 0)}</b>
+              Worked:{" "}
+              <b>{formatHours(weekly?.summary?.worked_net_hours ?? 0)}</b>
             </span>
           </div>
 

@@ -9,7 +9,7 @@ function payrollWindowByFriday(today = new Date()) {
   const d = new Date(today);
   d.setHours(0, 0, 0, 0);
 
-  const dow = d.getDay(); // 0..6
+  const dow = d.getDay();
   const diffToFri = (dow - 5 + 7) % 7;
 
   const weekEnd = new Date(d);
@@ -61,8 +61,10 @@ router.get("/me/today", requireAuth, async (req, res, next) => {
         ON b.attendance_id = a.id
        AND b.break_start IS NOT NULL
       WHERE a.user_id = $1
-        AND a.scheduled_start IS NOT NULL
-        AND a.scheduled_start::date = CURRENT_DATE
+        AND (
+          a.created_at::date = CURRENT_DATE
+          OR a.scheduled_start::date = CURRENT_DATE
+        )
       GROUP BY a.id
       ORDER BY a.id DESC
       `,
@@ -232,9 +234,6 @@ router.get("/me/weekly", requireAuth, async (req, res, next) => {
   }
 });
 
-/**
- * ADMIN OVERVIEW
- */
 router.get(
   "/admin/overview",
   requireAuth,
@@ -290,9 +289,6 @@ router.get(
   }
 );
 
-/**
- * ADMIN WEEKLY
- */
 router.get(
   "/admin/weekly",
   requireAuth,

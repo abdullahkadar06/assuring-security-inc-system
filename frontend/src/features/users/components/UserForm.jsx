@@ -62,10 +62,7 @@ export default function UserForm({ onSaved }) {
 
       onSaved?.();
     } catch (e2) {
-      showToast(
-        e2?.response?.data?.message || "Create failed",
-        "error"
-      );
+      showToast(e2?.response?.data?.message || "Create failed", "error");
     } finally {
       setBusy(false);
     }

@@ -174,10 +174,11 @@ router.post("/clock-in", requireAuth, async (req, res, next) => {
 router.post("/clock-out", requireAuth, async (req, res, next) => {
   try {
     const open = await pool.query(
-      `SELECT id, clock_in
-       FROM attendance
-       WHERE user_id = $1 AND status = 'OPEN'
-       ORDER BY id DESC
+      `SELECT a.id, a.clock_in, a.user_id, COALESCE(u.hourly_rate, 0) AS hourly_rate
+       FROM attendance a
+       JOIN users u ON u.id = a.user_id
+       WHERE a.user_id = $1 AND a.status = 'OPEN'
+       ORDER BY a.id DESC
        LIMIT 1`,
       [req.user.id]
     );
@@ -219,6 +220,7 @@ router.post("/clock-out", requireAuth, async (req, res, next) => {
     const workedSeconds = Math.max(0, rawSeconds - breakSeconds);
     const totalHours = Number((workedSeconds / 3600).toFixed(2));
     const paidHours = totalHours;
+    const totalPay = Number((paidHours * Number(attendance.hourly_rate || 0)).toFixed(2));
 
     const upd = await pool.query(
       `UPDATE attendance
@@ -231,6 +233,25 @@ router.post("/clock-out", requireAuth, async (req, res, next) => {
       [attendanceId, totalHours, paidHours]
     );
 
+    await pool.query(
+      `INSERT INTO payroll (user_id, attendance_id, regular_hours, overtime_hours, hourly_rate, total_pay)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       ON CONFLICT (attendance_id) DO UPDATE
+         SET user_id = EXCLUDED.user_id,
+             regular_hours = EXCLUDED.regular_hours,
+             overtime_hours = EXCLUDED.overtime_hours,
+             hourly_rate = EXCLUDED.hourly_rate,
+             total_pay = EXCLUDED.total_pay`,
+      [
+        attendance.user_id,
+        attendanceId,
+        paidHours,
+        0,
+        Number(attendance.hourly_rate || 0),
+        totalPay,
+      ]
+    );
+
     await auditLog({
       actor_user_id: req.user.id,
       action: "CLOCK_OUT",
@@ -240,10 +261,20 @@ router.post("/clock-out", requireAuth, async (req, res, next) => {
         total_hours: totalHours,
         paid_hours: paidHours,
         break_seconds: breakSeconds,
+        total_pay: totalPay,
       },
     });
 
-    res.json({ attendance: upd.rows[0] });
+    res.json({
+      attendance: upd.rows[0],
+      payroll: {
+        attendance_id: attendanceId,
+        total_pay: totalPay,
+        regular_hours: paidHours,
+        overtime_hours: 0,
+        hourly_rate: Number(attendance.hourly_rate || 0),
+      },
+    });
   } catch (e) {
     next(e);
   }
