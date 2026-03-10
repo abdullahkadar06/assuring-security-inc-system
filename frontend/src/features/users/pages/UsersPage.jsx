@@ -21,7 +21,10 @@ export default function UsersPage() {
       const d = await usersApi.list();
       setUsers(d?.users || []);
     } catch (e) {
-      showToast("Could not load users", "error");
+      showToast(
+        e?.response?.data?.message || "Could not load users",
+        "error"
+      );
     } finally {
       setBusy(false);
     }
@@ -37,6 +40,7 @@ export default function UsersPage() {
     <div className="space-y-4">
       <div className="flex justify-end">
         <Button
+          type="button"
           onClick={() => setOpen(true)}
           className="flex items-center gap-2 px-4 shadow-lg shadow-brand-blue/20"
         >
@@ -46,16 +50,20 @@ export default function UsersPage() {
       </div>
 
       {users.length === 0 ? (
-        <Card className="text-center py-10 text-brand-text/50">
+        <Card className="py-10 text-center text-brand-text/50">
           No employees found in the database.
         </Card>
       ) : (
-        <div className="rounded-[28px] border border-brand-line/70 bg-brand-card/25 p-2 overflow-hidden shadow-xl">
+        <div className="overflow-hidden rounded-[28px] border border-brand-line/70 bg-brand-card/25 p-2 shadow-xl">
           <UserTable rows={users} reload={load} />
         </div>
       )}
 
-      <Modal open={open} title="Register New Employee" onClose={() => setOpen(false)}>
+      <Modal
+        open={open}
+        title="Register New Employee"
+        onClose={() => setOpen(false)}
+      >
         <UserForm
           onSaved={async () => {
             setOpen(false);

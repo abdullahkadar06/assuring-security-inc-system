@@ -15,41 +15,57 @@ const patchAttendanceSchema = z.object({
   notes: z.string().max(2000).optional(),
 });
 
-router.patch("/attendance/:id", requireAuth, requireRole("ADMIN"), async (req, res, next) => {
-  try {
-    const id = Number(req.params.id);
-    const parsed = patchAttendanceSchema.safeParse(req.body ?? {});
-    if (!parsed.success) return res.status(400).json({ message: "Invalid payload", errors: parsed.error.flatten() });
+router.patch(
+  "/attendance/:id",
+  requireAuth,
+  requireRole("ADMIN"),
+  async (req, res, next) => {
+    try {
+      const id = Number(req.params.id);
 
-    const fields = parsed.data;
-    const keys = Object.keys(fields);
-    if (keys.length === 0) return res.status(400).json({ message: "No fields to update" });
+      const parsed = patchAttendanceSchema.safeParse(req.body ?? {});
+      if (!parsed.success) {
+        return res.status(400).json({
+          message: "Invalid payload",
+          errors: parsed.error.flatten(),
+        });
+      }
 
-    const sets = keys.map((k, i) => `${k} = $${i + 1}`).join(", ");
-    const values = keys.map((k) => fields[k]);
+      const fields = parsed.data;
+      const keys = Object.keys(fields);
 
-    const upd = await pool.query(
-      `UPDATE attendance
-       SET ${sets}
-       WHERE id = $${keys.length + 1}
-       RETURNING *`,
-      [...values, id]
-    );
+      if (keys.length === 0) {
+        return res.status(400).json({ message: "No fields to update" });
+      }
 
-    if (upd.rowCount === 0) return res.status(404).json({ message: "Attendance not found" });
+      const sets = keys.map((k, i) => `${k} = $${i + 1}`).join(", ");
+      const values = keys.map((k) => fields[k]);
 
-    await auditLog({
-      actor_user_id: req.user.id,
-      action: "ADMIN_CORRECTION",
-      entity: "attendance",
-      entity_id: id,
-      meta: fields,
-    });
+      const upd = await pool.query(
+        `UPDATE attendance
+         SET ${sets}
+         WHERE id = $${keys.length + 1}
+         RETURNING *`,
+        [...values, id]
+      );
 
-    res.json({ attendance: upd.rows[0] });
-  } catch (e) {
-    next(e);
+      if (upd.rowCount === 0) {
+        return res.status(404).json({ message: "Attendance not found" });
+      }
+
+      await auditLog({
+        actor_user_id: req.user.id,
+        action: "ADMIN_CORRECTION",
+        entity: "attendance",
+        entity_id: id,
+        meta: fields,
+      });
+
+      res.json({ attendance: upd.rows[0] });
+    } catch (e) {
+      next(e);
+    }
   }
-});
+);
 
 export default router;
