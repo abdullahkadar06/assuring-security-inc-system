@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Card from "../../../components/ui/Card";
 import Modal from "../../../components/ui/Modal";
 import Button from "../../../components/ui/Button";
@@ -12,13 +12,51 @@ import {
   CalendarClock,
 } from "lucide-react";
 import { usersApi } from "../../../api/users.api";
+import { shiftsApi } from "../../../api/shifts.api";
 import { useUiStore } from "../../../state/ui/ui.store";
+
+function getLocationPlaceholders() {
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "";
+
+  if (tz.includes("Africa")) {
+    return {
+      phone: "e.g. +252 63 4123456",
+      address: "e.g. Jigjiga Yar, Hargeisa, Somaliland",
+      hourlyRate: "e.g. 10",
+    };
+  }
+
+  if (tz.includes("America")) {
+    return {
+      phone: "e.g. +1 720 555 1234",
+      address: "e.g. 123 Main St, Denver, CO 80203",
+      hourlyRate: "e.g. 18",
+    };
+  }
+
+  if (tz.includes("Europe")) {
+    return {
+      phone: "e.g. +44 7700 900123",
+      address: "e.g. 221B Baker Street, London",
+      hourlyRate: "e.g. 15",
+    };
+  }
+
+  return {
+    phone: "e.g. +252 63 4123456",
+    address: "Enter full address",
+    hourlyRate: "e.g. 10",
+  };
+}
 
 export default function UserTable({ rows = [], reload }) {
   const showToast = useUiStore((s) => s.showToast);
+  const placeholders = useMemo(() => getLocationPlaceholders(), []);
 
   const [editOpen, setEditOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [loadingShifts, setLoadingShifts] = useState(false);
+  const [shifts, setShifts] = useState([]);
   const [selected, setSelected] = useState(null);
 
   const [fullName, setFullName] = useState("");
@@ -29,12 +67,45 @@ export default function UserTable({ rows = [], reload }) {
   const [role, setRole] = useState("EMPLOYEE");
   const [isActive, setIsActive] = useState(true);
 
+  useEffect(() => {
+    let mounted = true;
+
+    const loadShifts = async () => {
+      try {
+        setLoadingShifts(true);
+        const res = await shiftsApi.list();
+        if (mounted) {
+          setShifts(res?.shifts || []);
+        }
+      } catch (e) {
+        if (mounted) {
+          showToast(
+            e?.response?.data?.message || "Failed to load shifts",
+            "error"
+          );
+        }
+      } finally {
+        if (mounted) setLoadingShifts(false);
+      }
+    };
+
+    loadShifts();
+
+    return () => {
+      mounted = false;
+    };
+  }, [showToast]);
+
   const openEdit = (user) => {
     setSelected(user);
     setFullName(user.full_name || "");
     setPhone(user.phone || "");
     setAddress(user.address || "");
-    setHourlyRate(String(user.hourly_rate ?? 0));
+    setHourlyRate(
+      user.hourly_rate === null || user.hourly_rate === undefined
+        ? ""
+        : String(user.hourly_rate)
+    );
     setShiftId(user.shift_id == null ? "" : String(user.shift_id));
     setRole(user.role || "EMPLOYEE");
     setIsActive(Boolean(user.is_active));
@@ -80,11 +151,6 @@ export default function UserTable({ rows = [], reload }) {
 
     if (hourlyRate !== "" && Number(hourlyRate) < 0) {
       showToast("Hourly rate cannot be negative", "error");
-      return;
-    }
-
-    if (shiftId !== "" && Number(shiftId) <= 0) {
-      showToast("Shift ID must be greater than 0", "error");
       return;
     }
 
@@ -137,7 +203,7 @@ export default function UserTable({ rows = [], reload }) {
 
                 <div className="flex items-center gap-1.5">
                   <CalendarClock size={13} className="text-brand-blue" />
-                  <span>shift: {u.shift_code || u.shift_id || "-"}</span>
+                  <span>shift: {u.shift_name || u.shift_code || "-"}</span>
                 </div>
               </div>
             </div>
@@ -170,12 +236,17 @@ export default function UserTable({ rows = [], reload }) {
             <Input
               value={fullName}
               onChange={(e) => setFullName(e.target.value)}
+              placeholder="Enter full name"
             />
           </div>
 
           <div>
             <div className="mb-1 text-sm text-brand-text/70">Phone</div>
-            <Input value={phone} onChange={(e) => setPhone(e.target.value)} />
+            <Input
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              placeholder={placeholders.phone}
+            />
           </div>
 
           <div>
@@ -183,6 +254,7 @@ export default function UserTable({ rows = [], reload }) {
             <Input
               value={address}
               onChange={(e) => setAddress(e.target.value)}
+              placeholder={placeholders.address}
             />
           </div>
 
@@ -197,18 +269,27 @@ export default function UserTable({ rows = [], reload }) {
                 step="0.01"
                 value={hourlyRate}
                 onChange={(e) => setHourlyRate(e.target.value)}
+                placeholder={placeholders.hourlyRate}
               />
             </div>
 
             <div>
-              <div className="mb-1 text-sm text-brand-text/70">Shift ID</div>
-              <Input
-                type="number"
-                min="1"
+              <div className="mb-1 text-sm text-brand-text/70">Shift</div>
+              <select
+                className="w-full rounded-2xl border border-brand-line bg-brand-card px-4 py-3 text-brand-text outline-none transition-all duration-200 focus:border-brand-blue/60 focus:bg-brand-bg/40 focus:ring-2 focus:ring-brand-blue/20"
                 value={shiftId}
                 onChange={(e) => setShiftId(e.target.value)}
-                placeholder="1"
-              />
+                disabled={loadingShifts}
+              >
+                <option value="">
+                  {loadingShifts ? "Loading shifts..." : "Select shift"}
+                </option>
+                {shifts.map((shift) => (
+                  <option key={shift.id} value={shift.id}>
+                    {shift.name} ({shift.code})
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
 
@@ -238,7 +319,7 @@ export default function UserTable({ rows = [], reload }) {
             </div>
           </div>
 
-          <Button type="submit" disabled={busy}>
+          <Button type="submit" disabled={busy || loadingShifts}>
             {busy ? "Saving..." : "Save Changes"}
           </Button>
         </form>

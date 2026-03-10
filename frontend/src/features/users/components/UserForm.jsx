@@ -1,12 +1,51 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Input from "../../../components/ui/Input";
 import Button from "../../../components/ui/Button";
 import { useUiStore } from "../../../state/ui/ui.store";
 import { usersApi } from "../../../api/users.api";
+import { shiftsApi } from "../../../api/shifts.api";
+
+function getLocationPlaceholders() {
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "";
+
+  if (tz.includes("Africa")) {
+    return {
+      phone: "e.g. +252 63 4123456",
+      address: "e.g. Jigjiga Yar, Hargeisa, Somaliland",
+      hourlyRate: "e.g. 10",
+    };
+  }
+
+  if (tz.includes("America")) {
+    return {
+      phone: "e.g. +1 720 555 1234",
+      address: "e.g. 123 Main St, Denver, CO 80203",
+      hourlyRate: "e.g. 18",
+    };
+  }
+
+  if (tz.includes("Europe")) {
+    return {
+      phone: "e.g. +44 7700 900123",
+      address: "e.g. 221B Baker Street, London",
+      hourlyRate: "e.g. 15",
+    };
+  }
+
+  return {
+    phone: "e.g. +252 63 4123456",
+    address: "Enter full address",
+    hourlyRate: "e.g. 10",
+  };
+}
 
 export default function UserForm({ onSaved }) {
   const showToast = useUiStore((s) => s.showToast);
+  const placeholders = useMemo(() => getLocationPlaceholders(), []);
+
   const [busy, setBusy] = useState(false);
+  const [loadingShifts, setLoadingShifts] = useState(true);
+  const [shifts, setShifts] = useState([]);
 
   const [full_name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -14,8 +53,36 @@ export default function UserForm({ onSaved }) {
   const [address, setAddress] = useState("");
   const [password, setPassword] = useState("");
   const [role, setRole] = useState("EMPLOYEE");
-  const [hourly_rate, setRate] = useState("0");
+  const [hourly_rate, setRate] = useState("");
   const [shift_id, setShiftId] = useState("");
+
+  useEffect(() => {
+    let mounted = true;
+
+    const loadShifts = async () => {
+      try {
+        const res = await shiftsApi.list();
+        if (mounted) {
+          setShifts(res?.shifts || []);
+        }
+      } catch (e) {
+        if (mounted) {
+          showToast(
+            e?.response?.data?.message || "Failed to load shifts",
+            "error"
+          );
+        }
+      } finally {
+        if (mounted) setLoadingShifts(false);
+      }
+    };
+
+    loadShifts();
+
+    return () => {
+      mounted = false;
+    };
+  }, [showToast]);
 
   const submit = async (e) => {
     e.preventDefault();
@@ -32,6 +99,11 @@ export default function UserForm({ onSaved }) {
 
     if (!password.trim()) {
       showToast("Password is required", "error");
+      return;
+    }
+
+    if (hourly_rate !== "" && Number(hourly_rate) < 0) {
+      showToast("Hourly rate cannot be negative", "error");
       return;
     }
 
@@ -57,7 +129,7 @@ export default function UserForm({ onSaved }) {
       setAddress("");
       setPassword("");
       setRole("EMPLOYEE");
-      setRate("0");
+      setRate("");
       setShiftId("");
 
       onSaved?.();
@@ -95,7 +167,7 @@ export default function UserForm({ onSaved }) {
           <Input
             value={phone}
             onChange={(e) => setPhone(e.target.value)}
-            placeholder="Enter phone"
+            placeholder={placeholders.phone}
           />
         </div>
 
@@ -107,7 +179,7 @@ export default function UserForm({ onSaved }) {
             step="0.01"
             value={hourly_rate}
             onChange={(e) => setRate(e.target.value)}
-            placeholder="0"
+            placeholder={placeholders.hourlyRate}
           />
         </div>
       </div>
@@ -117,7 +189,7 @@ export default function UserForm({ onSaved }) {
         <Input
           value={address}
           onChange={(e) => setAddress(e.target.value)}
-          placeholder="Enter address"
+          placeholder={placeholders.address}
         />
       </div>
 
@@ -135,14 +207,22 @@ export default function UserForm({ onSaved }) {
         </div>
 
         <div>
-          <div className="mb-1 text-sm text-brand-text/70">Shift ID</div>
-          <Input
-            type="number"
-            min="1"
+          <div className="mb-1 text-sm text-brand-text/70">Shift</div>
+          <select
+            className="w-full rounded-2xl border border-brand-line bg-brand-card px-4 py-3 text-brand-text outline-none transition-all duration-200 focus:border-brand-blue/60 focus:bg-brand-bg/40 focus:ring-2 focus:ring-brand-blue/20"
             value={shift_id}
             onChange={(e) => setShiftId(e.target.value)}
-            placeholder="1"
-          />
+            disabled={loadingShifts}
+          >
+            <option value="">
+              {loadingShifts ? "Loading shifts..." : "Select shift"}
+            </option>
+            {shifts.map((shift) => (
+              <option key={shift.id} value={shift.id}>
+                {shift.name} ({shift.code})
+              </option>
+            ))}
+          </select>
         </div>
       </div>
 
@@ -156,7 +236,7 @@ export default function UserForm({ onSaved }) {
         />
       </div>
 
-      <Button type="submit" disabled={busy}>
+      <Button type="submit" disabled={busy || loadingShifts}>
         {busy ? "Saving..." : "Save"}
       </Button>
     </form>
