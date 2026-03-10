@@ -28,6 +28,36 @@ async function findOpenAttendanceForUser(userId) {
   return open.rowCount ? open.rows[0].id : null;
 }
 
+router.get("/current", requireAuth, async (req, res, next) => {
+  try {
+    const attendanceId = await findOpenAttendanceForUser(req.user.id);
+
+    if (!attendanceId) {
+      return res.json({
+        attendance_open: false,
+        current_break: null,
+      });
+    }
+
+    const openBreak = await pool.query(
+      `SELECT id, attendance_id, break_start, break_end
+       FROM breaks
+       WHERE attendance_id = $1
+         AND break_end IS NULL
+       ORDER BY id DESC
+       LIMIT 1`,
+      [attendanceId]
+    );
+
+    return res.json({
+      attendance_open: true,
+      current_break: openBreak.rowCount ? openBreak.rows[0] : null,
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
 router.post("/start", requireAuth, async (req, res, next) => {
   try {
     const parsed = startSchema.safeParse(req.body ?? {});

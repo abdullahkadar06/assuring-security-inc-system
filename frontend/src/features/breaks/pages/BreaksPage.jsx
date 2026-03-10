@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Coffee,
   TimerReset,
@@ -18,19 +18,71 @@ export default function BreaksPage() {
   const now = useNow(1000);
 
   const [busy, setBusy] = useState(false);
+  const [loadingState, setLoadingState] = useState(true);
   const [breakStartISO, setBreakStartISO] = useState(null);
+  const [hasOpenAttendance, setHasOpenAttendance] = useState(false);
+
+  const loadCurrentBreakState = useCallback(async () => {
+    try {
+      setLoadingState(true);
+      const res = await breaksApi.current();
+
+      setHasOpenAttendance(Boolean(res?.attendance_open));
+
+      if (res?.current_break?.break_start && !res?.current_break?.break_end) {
+        setBreakStartISO(res.current_break.break_start);
+      } else {
+        setBreakStartISO(null);
+      }
+    } catch (e) {
+      showToast(e?.response?.data?.message || "Failed loading break state", "error");
+    } finally {
+      setLoadingState(false);
+    }
+  }, [showToast]);
+
+  useEffect(() => {
+    loadCurrentBreakState();
+
+    const handleRefresh = () => loadCurrentBreakState();
+    window.addEventListener("attendance:changed", handleRefresh);
+    window.addEventListener("break:changed", handleRefresh);
+
+    return () => {
+      window.removeEventListener("attendance:changed", handleRefresh);
+      window.removeEventListener("break:changed", handleRefresh);
+    };
+  }, [loadCurrentBreakState]);
+
+  const isOnBreak = Boolean(breakStartISO);
 
   const breakElapsed = breakStartISO
     ? formatDuration(now - toMs(breakStartISO))
     : "00:00:00";
 
+  const startDisabled = useMemo(() => {
+    if (busy || loadingState) return true;
+    if (!hasOpenAttendance) return true;
+    if (isOnBreak) return true;
+    return false;
+  }, [busy, loadingState, hasOpenAttendance, isOnBreak]);
+
+  const endDisabled = useMemo(() => {
+    if (busy || loadingState) return true;
+    return !isOnBreak;
+  }, [busy, loadingState, isOnBreak]);
+
   const onStart = async () => {
+    if (startDisabled) return;
+
     setBusy(true);
     try {
       const res = await breaksApi.start({});
       const b = res?.break;
       if (b?.break_start) setBreakStartISO(b.break_start);
       showToast("Break started");
+      window.dispatchEvent(new Event("break:changed"));
+      window.dispatchEvent(new Event("attendance:changed"));
     } catch (e) {
       showToast(e?.response?.data?.message || "Start break failed", "error");
     } finally {
@@ -39,11 +91,15 @@ export default function BreaksPage() {
   };
 
   const onEnd = async () => {
+    if (endDisabled) return;
+
     setBusy(true);
     try {
       await breaksApi.end({});
       setBreakStartISO(null);
       showToast("Break ended");
+      window.dispatchEvent(new Event("break:changed"));
+      window.dispatchEvent(new Event("attendance:changed"));
     } catch (e) {
       showToast(e?.response?.data?.message || "End break failed", "error");
     } finally {
@@ -51,7 +107,7 @@ export default function BreaksPage() {
     }
   };
 
-  if (busy) return <Loader label="Processing..." />;
+  if (loadingState && !busy) return <Loader label="Loading break state..." />;
 
   return (
     <div className="space-y-4">
@@ -78,11 +134,13 @@ export default function BreaksPage() {
 
         <div className="rounded-2xl border border-brand-line/70 bg-brand-bg/35 p-4">
           <div className="text-3xl font-bold text-white">
-            {breakStartISO ? breakElapsed : "Not on break"}
+            {isOnBreak ? breakElapsed : "Not on break"}
           </div>
 
           <div className="mt-2 text-sm text-brand-text/60">
-            {breakStartISO
+            {!hasOpenAttendance
+              ? "Clock in first before starting a break."
+              : isOnBreak
               ? `Started at: ${new Date(breakStartISO).toLocaleTimeString()}`
               : "Start a break to begin timer."}
           </div>
@@ -94,7 +152,10 @@ export default function BreaksPage() {
               <PlayCircle size={16} className="text-emerald-400" />
               <span>Start Break</span>
             </div>
-            <Button onClick={onStart}>Start Break</Button>
+
+            <Button disabled={startDisabled} onClick={onStart}>
+              {busy && !isOnBreak ? "Starting..." : !hasOpenAttendance ? "Clock In First" : isOnBreak ? "Break Active" : "Start Break"}
+            </Button>
           </div>
 
           <div>
@@ -102,8 +163,13 @@ export default function BreaksPage() {
               <StopCircle size={16} className="text-red-400" />
               <span>End Break</span>
             </div>
-            <Button className="bg-brand-red border-brand-red" onClick={onEnd}>
-              End Break
+
+            <Button
+              className="bg-brand-red border-brand-red"
+              disabled={endDisabled}
+              onClick={onEnd}
+            >
+              {busy && isOnBreak ? "Ending..." : !isOnBreak ? "No Active Break" : "End Break"}
             </Button>
           </div>
         </div>

@@ -115,6 +115,26 @@ router.post("/clock-in", requireAuth, async (req, res, next) => {
       return res.status(409).json({ message: "You already have an OPEN shift" });
     }
 
+    const existingToday = await pool.query(
+      `SELECT id, status
+       FROM attendance
+       WHERE user_id = $1
+         AND created_at::date = CURRENT_DATE
+       ORDER BY id DESC
+       LIMIT 1`,
+      [req.user.id]
+    );
+
+    if (existingToday.rowCount > 0) {
+      const status = existingToday.rows[0].status;
+      if (status === "CLOSED") {
+        return res.status(409).json({ message: "Today's shift is already closed" });
+      }
+      if (status === "OPEN") {
+        return res.status(409).json({ message: "You already have an OPEN shift" });
+      }
+    }
+
     const now = new Date();
     const win = resolveShiftWindow(
       now,
