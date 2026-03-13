@@ -8,12 +8,16 @@ import { usersApi } from "../../../api/users.api";
 import { useUiStore } from "../../../state/ui/ui.store";
 import UserForm from "../components/UserForm";
 import UserTable from "../components/UserTable";
+import AssignShiftModal from "../components/AssignShiftModal";
 
 export default function UsersPage() {
   const showToast = useUiStore((s) => s.showToast);
   const [busy, setBusy] = useState(true);
   const [users, setUsers] = useState([]);
   const [open, setOpen] = useState(false);
+
+  const [assignOpen, setAssignOpen] = useState(false);
+  const [selectedUser, setSelectedUser] = useState(null);
 
   const load = async () => {
     setBusy(true);
@@ -55,7 +59,14 @@ export default function UsersPage() {
         </Card>
       ) : (
         <div className="overflow-hidden rounded-[28px] border border-brand-line/70 bg-brand-card/25 p-2 shadow-xl">
-          <UserTable rows={users} reload={load} />
+          <UserTable
+            rows={users}
+            reload={load}
+            onAssignShift={(user) => {
+              setSelectedUser(user);
+              setAssignOpen(true);
+            }}
+          />
         </div>
       )}
 
@@ -71,6 +82,18 @@ export default function UsersPage() {
           }}
         />
       </Modal>
+
+      <AssignShiftModal
+        open={assignOpen}
+        onClose={() => {
+          setAssignOpen(false);
+          setSelectedUser(null);
+        }}
+        selectedUser={selectedUser}
+        onAssigned={async () => {
+          await load();
+        }}
+      />
     </div>
   );
 }

@@ -17,6 +17,7 @@ import { useNetworkStatus } from "../../../hooks/useNetworkStatus";
 import { useUiStore } from "../../../state/ui/ui.store";
 import { usersApi } from "../../../api/users.api";
 import { authApi } from "../../../api/auth.api";
+import { formatUserShift } from "../../../utils/shiftFormatter";
 
 export default function ProfilePage() {
   const { user, setUser, updateUser } = useAuth();
@@ -30,7 +31,7 @@ export default function ProfilePage() {
 
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState(""); // 👈 Halkan ayaan ku darnay
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [changingPassword, setChangingPassword] = useState(false);
 
   const canSaveProfile = useMemo(() => {
@@ -71,7 +72,6 @@ export default function ProfilePage() {
       return showToast("Please fill all password fields", "error");
     }
 
-    // 👈 Halkan waxaan ku hubinaynaa inay isku mid yihiin
     if (newPassword !== confirmPassword) {
       return showToast("New passwords do not match!", "error");
     }
@@ -89,7 +89,7 @@ export default function ProfilePage() {
 
       setCurrentPassword("");
       setNewPassword("");
-      setConfirmPassword(""); // 👈 Waan tirtiraynaa markuu guulaysto
+      setConfirmPassword("");
       showToast("Password changed successfully", "success");
     } catch (e) {
       const msg = e?.response?.data?.message || "Password change failed";
@@ -99,9 +99,7 @@ export default function ProfilePage() {
     }
   };
 
-  // Map Shift ID to Shift Name
-  const shiftDisplay = user?.shift_id === 1 ? "MORNING" : 
-                       user?.shift_id === 2 ? "NIGHT" : "UNASSIGNED";
+  const shiftDisplay = formatUserShift(user);
 
   return (
     <div className="space-y-4">
@@ -121,7 +119,9 @@ export default function ProfilePage() {
 
         <div className="space-y-1">
           <div className="text-xl font-bold">{user?.full_name || "-"}</div>
-          <div className="break-all text-sm text-brand-text/80">{user?.email || "-"}</div>
+          <div className="break-all text-sm text-brand-text/80">
+            {user?.email || "-"}
+          </div>
         </div>
 
         <div className="grid grid-cols-2 gap-3 text-sm">
@@ -144,14 +144,20 @@ export default function ProfilePage() {
       </Card>
 
       <Card className="space-y-4">
-        <div className="text-sm font-semibold text-brand-text/70">Contact Information</div>
+        <div className="text-sm font-semibold text-brand-text/70">
+          Contact Information
+        </div>
 
         <div>
           <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-brand-text/75">
             <Phone size={16} className="text-brand-blue" />
             <span>Phone Number</span>
           </div>
-          <Input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="e.g. +252 63 4123456" />
+          <Input
+            value={phone}
+            onChange={(e) => setPhone(e.target.value)}
+            placeholder="e.g. +252 63 4123456"
+          />
         </div>
 
         <div>
@@ -172,7 +178,9 @@ export default function ProfilePage() {
       </Card>
 
       <Card className="space-y-4">
-        <div className="text-sm font-semibold text-brand-text/70">Change Password</div>
+        <div className="text-sm font-semibold text-brand-text/70">
+          Change Password
+        </div>
 
         <div>
           <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-brand-text/75">
@@ -200,7 +208,6 @@ export default function ProfilePage() {
           />
         </div>
 
-        {/* 👈 Halkan waa Input-ka cusub ee Confirm Password */}
         <div>
           <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-brand-text/75">
             <KeyRound size={16} className="text-red-400" />

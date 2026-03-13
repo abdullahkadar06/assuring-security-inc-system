@@ -4,14 +4,12 @@ import { attendanceApi } from "../../../api/attendance.api";
 import { dashboardApi } from "../../../api/dashboard.api";
 import { useUiStore } from "../../../state/ui/ui.store";
 
-function getLatestStatus(rows = []) {
-  const latest = rows?.[0];
-  return latest?.status || "NONE";
+function getLatest(rows = []) {
+  return rows?.[0] || null;
 }
 
 export default function CheckInButton() {
   const showToast = useUiStore((s) => s.showToast);
-
   const [busy, setBusy] = useState(false);
   const [loadingState, setLoadingState] = useState(true);
   const [todayRows, setTodayRows] = useState([]);
@@ -22,7 +20,10 @@ export default function CheckInButton() {
       const d = await dashboardApi.meToday();
       setTodayRows(d?.today || []);
     } catch (e) {
-      showToast(e?.response?.data?.message || "Failed loading attendance state", "error");
+      showToast(
+        e?.response?.data?.message || "Failed loading attendance state",
+        "error"
+      );
     } finally {
       setLoadingState(false);
     }
@@ -32,27 +33,31 @@ export default function CheckInButton() {
     loadToday();
 
     const handleRefresh = () => loadToday();
+
     window.addEventListener("attendance:changed", handleRefresh);
     window.addEventListener("break:changed", handleRefresh);
+    window.addEventListener("payroll:changed", handleRefresh);
 
     return () => {
       window.removeEventListener("attendance:changed", handleRefresh);
       window.removeEventListener("break:changed", handleRefresh);
+      window.removeEventListener("payroll:changed", handleRefresh);
     };
   }, [loadToday]);
 
-  const latestStatus = useMemo(() => getLatestStatus(todayRows), [todayRows]);
+  const latest = useMemo(() => getLatest(todayRows), [todayRows]);
+  const latestStatus = latest?.status || "NONE";
 
   const disabled = useMemo(() => {
     if (busy || loadingState) return true;
-    return latestStatus === "OPEN" || latestStatus === "CLOSED";
+    return latestStatus === "OPEN" || latestStatus === "CLOSED" || latestStatus === "AUTO_CLOSED";
   }, [busy, loadingState, latestStatus]);
 
   const buttonText = useMemo(() => {
     if (busy) return "Checking in...";
     if (loadingState) return "Loading...";
     if (latestStatus === "OPEN") return "Already Checked In";
-    if (latestStatus === "CLOSED") return "Shift Closed";
+    if (latestStatus === "CLOSED" || latestStatus === "AUTO_CLOSED") return "Shift Closed";
     return "Clock In";
   }, [busy, loadingState, latestStatus]);
 
@@ -61,20 +66,26 @@ export default function CheckInButton() {
 
     setBusy(true);
     try {
-      await attendanceApi.clockIn({});
-      showToast("Clock-in successful");
+      const res = await attendanceApi.clockIn({});
+
+      showToast(
+        res?.body?.message ||
+          res?.message ||
+          "Clock-in successful"
+      );
+
       window.dispatchEvent(new Event("attendance:changed"));
       window.dispatchEvent(new Event("break:changed"));
+      window.dispatchEvent(new Event("payroll:changed"));
     } catch (e) {
-      showToast(e?.response?.data?.message || "Clock-in failed", "error");
+      showToast(
+        e?.response?.data?.message || "Clock-in failed",
+        "error"
+      );
     } finally {
       setBusy(false);
     }
   };
 
-  return (
-    <Button disabled={disabled} onClick={onClick}>
-      {buttonText}
-    </Button>
-  );
+  return <Button disabled={disabled} onClick={onClick}>{buttonText}</Button>;
 }

@@ -6,7 +6,6 @@ import { requireRole } from "../middleware/requireRole.js";
 import { auditLog } from "../utils/audit.js";
 
 const router = Router();
-
 const timeRegex = /^\d{2}:\d{2}(:\d{2})?$/;
 
 const shiftSchema = z.object({
@@ -15,7 +14,7 @@ const shiftSchema = z.object({
   start_time: z.string().regex(timeRegex, "Invalid start time format"),
   end_time: z.string().regex(timeRegex, "Invalid end time format"),
   grace_before_minutes: z.number().int().min(0).max(180).default(15),
-  grace_after_minutes: z.number().int().min(0).max(180).default(15),
+  grace_after_minutes: z.number().int().min(0).max(180).default(60),
   is_active: z.boolean().default(true),
 });
 
@@ -59,9 +58,17 @@ router.post("/", requireAuth, requireRole("ADMIN"), async (req, res, next) => {
     }
 
     const r = await pool.query(
-      `INSERT INTO shifts (code, name, start_time, end_time, grace_before_minutes, grace_after_minutes, is_active)
-       VALUES ($1,$2,$3,$4,$5,$6,$7)
-       RETURNING *`,
+      `INSERT INTO shifts (
+        code,
+        name,
+        start_time,
+        end_time,
+        grace_before_minutes,
+        grace_after_minutes,
+        is_active
+      )
+      VALUES ($1,$2,$3,$4,$5,$6,$7)
+      RETURNING *`,
       [
         s.code,
         s.name,
@@ -151,11 +158,9 @@ router.delete("/:id", requireAuth, requireRole("ADMIN"), async (req, res, next) 
     const id = Number(req.params.id);
 
     const usage = await pool.query(
-      `
-      SELECT
-        (SELECT COUNT(*) FROM users WHERE shift_id = $1)::int AS users_count,
-        (SELECT COUNT(*) FROM attendance WHERE shift_id = $1)::int AS attendance_count
-      `,
+      `SELECT
+          (SELECT COUNT(*) FROM users WHERE shift_id = $1)::int AS users_count,
+          (SELECT COUNT(*) FROM attendance WHERE shift_id = $1)::int AS attendance_count`,
       [id]
     );
 
@@ -164,14 +169,20 @@ router.delete("/:id", requireAuth, requireRole("ADMIN"), async (req, res, next) 
       attendance_count: 0,
     };
 
-    if (Number(usageRow.users_count) > 0 || Number(usageRow.attendance_count) > 0) {
+    if (
+      Number(usageRow.users_count) > 0 ||
+      Number(usageRow.attendance_count) > 0
+    ) {
       return res.status(400).json({
         message: "Cannot delete this shift because it is already in use",
         usage: usageRow,
       });
     }
 
-    const r = await pool.query(`DELETE FROM shifts WHERE id = $1 RETURNING id`, [id]);
+    const r = await pool.query(
+      `DELETE FROM shifts WHERE id = $1 RETURNING id`,
+      [id]
+    );
 
     if (r.rowCount === 0) {
       return res.status(404).json({ message: "Shift not found" });
@@ -204,7 +215,10 @@ router.post("/assign", requireAuth, requireRole("ADMIN"), async (req, res, next)
     const { user_id, shift_id } = parsed.data;
 
     const s = await pool.query(
-      `SELECT id, code, name FROM shifts WHERE id = $1 AND is_active = TRUE`,
+      `SELECT id, code, name
+       FROM shifts
+       WHERE id = $1
+         AND is_active = TRUE`,
       [shift_id]
     );
 

@@ -7,6 +7,7 @@ import { useUiStore } from "../../../state/ui/ui.store";
 import { useRole } from "../../../hooks/useRole";
 import { useAuth } from "../../../hooks/useAuth";
 import CompactAnalytics from "../components/CompactAnalytics";
+import { formatUserShift } from "../../../utils/shiftFormatter";
 import {
   Activity,
   Wallet,
@@ -31,9 +32,29 @@ function formatMoney(value) {
   return `$${Number(value ?? 0).toFixed(2)}`;
 }
 
-function formatBreakMinutes(totalMinutes = 0) {
-  const mins = Math.max(0, Math.round(Number(totalMinutes || 0)));
-  return `${String(mins).padStart(2, "0")}m`;
+function formatBreakDuration(totalMinutes = 0) {
+  const mins = Math.max(0, Number(totalMinutes || 0));
+
+  if (mins <= 0) return "0s";
+
+  if (mins < 1) {
+    const seconds = Math.max(1, Math.round(mins * 60));
+    return `${seconds}s`;
+  }
+
+  if (mins < 60) {
+    return `${Math.round(mins)}m`;
+  }
+
+  const roundedMinutes = Math.round(mins);
+  const hours = Math.floor(roundedMinutes / 60);
+  const remainingMinutes = roundedMinutes % 60;
+
+  if (remainingMinutes === 0) {
+    return `${hours}h`;
+  }
+
+  return `${hours}h ${remainingMinutes}m`;
 }
 
 export default function DashboardPage() {
@@ -47,51 +68,47 @@ export default function DashboardPage() {
   const [adminOverview, setAdminOverview] = useState(null);
   const [adminWeekly, setAdminWeekly] = useState(null);
 
-  const loadDashboardData = useCallback(
-    async (retryCount = 1) => {
-      try {
-        setBusy(true);
+  const loadDashboardData = useCallback(async () => {
+    try {
+      setBusy(true);
 
-        const [t, w] = await Promise.all([
-          dashboardApi.meToday(),
-          dashboardApi.meWeekly(),
+      const [t, w] = await Promise.all([
+        dashboardApi.meToday(),
+        dashboardApi.meWeekly(),
+      ]);
+
+      setToday(t?.today || []);
+      setWeekly(w || null);
+
+      if (isAdmin) {
+        const [ao, aw] = await Promise.allSettled([
+          dashboardApi.adminOverview(),
+          dashboardApi.adminWeekly(),
         ]);
 
-        setToday(t?.today || []);
-        setWeekly(w || null);
-
-        if (isAdmin) {
-          const [ao, aw] = await Promise.allSettled([
-            dashboardApi.adminOverview(),
-            dashboardApi.adminWeekly(),
-          ]);
-
-          setAdminOverview(ao.status === "fulfilled" ? ao.value : null);
-          setAdminWeekly(aw.status === "fulfilled" ? aw.value : null);
-        } else {
-          setAdminOverview(null);
-          setAdminWeekly(null);
-        }
-      } catch (e) {
-        if (retryCount > 0) {
-          setTimeout(() => loadDashboardData(retryCount - 1), 2500);
-          return;
-        }
-        showToast(
-          e?.response?.data?.message || "Dashboard load failed",
-          "error"
-        );
-      } finally {
-        setBusy(false);
+        setAdminOverview(ao.status === "fulfilled" ? ao.value : null);
+        setAdminWeekly(aw.status === "fulfilled" ? aw.value : null);
+      } else {
+        setAdminOverview(null);
+        setAdminWeekly(null);
       }
-    },
-    [isAdmin, showToast]
-  );
+    } catch (e) {
+      showToast(
+        e?.response?.data?.message || "Dashboard load failed",
+        "error"
+      );
+    } finally {
+      setBusy(false);
+    }
+  }, [isAdmin, showToast]);
 
   useEffect(() => {
     loadDashboardData();
 
-    const handleRefresh = () => loadDashboardData(0);
+    const handleRefresh = () => {
+      loadDashboardData();
+    };
+
     window.addEventListener("attendance:changed", handleRefresh);
     window.addEventListener("break:changed", handleRefresh);
     window.addEventListener("payroll:changed", handleRefresh);
@@ -103,16 +120,12 @@ export default function DashboardPage() {
     };
   }, [loadDashboardData]);
 
-  if (busy) return <Loader label="Loading dashboard..." />;
+  if (busy) {
+    return <Loader label="Loading dashboard..." />;
+  }
 
   const latest = today?.[0] || null;
-
-  const shiftText =
-    user?.shift_id === 1
-      ? "MORNING (08:00 - 16:00)"
-      : user?.shift_id === 2
-      ? "NIGHT (23:00 - 07:00)"
-      : "Not Assigned";
+  const shiftText = formatUserShift(user, new Date());
 
   const currentStatus =
     latest?.status && latest.status !== "NONE" ? latest.status : "Off Duty";
@@ -157,7 +170,7 @@ export default function DashboardPage() {
         <div className="col-span-2">
           <StatCard
             title="Break today"
-            value={formatBreakMinutes(breakTodayMinutes)}
+            value={formatBreakDuration(breakTodayMinutes)}
             icon={<Coffee size={20} />}
           />
         </div>
@@ -187,8 +200,7 @@ export default function DashboardPage() {
           <div className="flex items-center gap-2">
             <BriefcaseBusiness size={16} className="text-amber-300" />
             <span>
-              Worked:{" "}
-              <b>{formatHours(weekly?.summary?.worked_net_hours ?? 0)}</b>
+              Worked: <b>{formatHours(weekly?.summary?.worked_net_hours ?? 0)}</b>
             </span>
           </div>
 

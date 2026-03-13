@@ -10,14 +10,18 @@ import {
   Shield,
   BadgeDollarSign,
   CalendarClock,
+  UserCheck,
 } from "lucide-react";
 import { usersApi } from "../../../api/users.api";
 import { shiftsApi } from "../../../api/shifts.api";
 import { useUiStore } from "../../../state/ui/ui.store";
+import {
+  formatShiftLabel,
+  formatShiftOption,
+} from "../../../utils/shiftFormatter";
 
 function getLocationPlaceholders() {
   const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "";
-
   if (tz.includes("Africa")) {
     return {
       phone: "e.g. +252 63 4123456",
@@ -25,7 +29,6 @@ function getLocationPlaceholders() {
       hourlyRate: "e.g. 10",
     };
   }
-
   if (tz.includes("America")) {
     return {
       phone: "e.g. +1 720 555 1234",
@@ -33,7 +36,6 @@ function getLocationPlaceholders() {
       hourlyRate: "e.g. 18",
     };
   }
-
   if (tz.includes("Europe")) {
     return {
       phone: "e.g. +44 7700 900123",
@@ -41,7 +43,6 @@ function getLocationPlaceholders() {
       hourlyRate: "e.g. 15",
     };
   }
-
   return {
     phone: "e.g. +252 63 4123456",
     address: "Enter full address",
@@ -49,7 +50,7 @@ function getLocationPlaceholders() {
   };
 }
 
-export default function UserTable({ rows = [], reload }) {
+export default function UserTable({ rows = [], reload, onAssignShift }) {
   const showToast = useUiStore((s) => s.showToast);
   const placeholders = useMemo(() => getLocationPlaceholders(), []);
 
@@ -75,7 +76,7 @@ export default function UserTable({ rows = [], reload }) {
         setLoadingShifts(true);
         const res = await shiftsApi.list();
         if (mounted) {
-          setShifts(res?.shifts || []);
+          setShifts((res?.shifts || []).filter((x) => Boolean(x.is_active)));
         }
       } catch (e) {
         if (mounted) {
@@ -114,7 +115,6 @@ export default function UserTable({ rows = [], reload }) {
 
   const closeEdit = () => {
     if (busy) return;
-
     setEditOpen(false);
     setSelected(null);
     setFullName("");
@@ -203,12 +203,20 @@ export default function UserTable({ rows = [], reload }) {
 
                 <div className="flex items-center gap-1.5">
                   <CalendarClock size={13} className="text-brand-blue" />
-                  <span>shift: {u.shift_name || u.shift_code || "-"}</span>
+                  <span>shift: {formatShiftLabel(u)}</span>
                 </div>
               </div>
             </div>
 
             <div className="flex shrink-0 gap-2">
+              <button
+                type="button"
+                onClick={() => onAssignShift?.(u)}
+                className="flex h-10 w-10 items-center justify-center rounded-xl border border-emerald-500/30 bg-emerald-500/15 text-emerald-300 transition-all duration-200 hover:-translate-y-[1px] hover:bg-emerald-500/20"
+              >
+                <UserCheck size={16} />
+              </button>
+
               <button
                 type="button"
                 onClick={() => openEdit(u)}
@@ -286,7 +294,7 @@ export default function UserTable({ rows = [], reload }) {
                 </option>
                 {shifts.map((shift) => (
                   <option key={shift.id} value={shift.id}>
-                    {shift.name} ({shift.code})
+                    {formatShiftOption(shift)}
                   </option>
                 ))}
               </select>

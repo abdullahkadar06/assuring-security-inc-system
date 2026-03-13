@@ -1,3 +1,5 @@
+
+
 import { useState, useEffect, useMemo } from "react";
 import { UserCheck, Clock, ListChecks, ShieldCheck } from "lucide-react";
 import Button from "../../../components/ui/Button";
@@ -16,14 +18,12 @@ export default function AssignShiftForm({ onAssigned }) {
 
   useEffect(() => {
     let mounted = true;
-
     (async () => {
       try {
         const [u, s] = await Promise.all([usersApi.list(), shiftsApi.list()]);
-
         if (!mounted) return;
-
         setUsers(u?.users || []);
+        // Kaliya shifts-ka shaqeeya ayaa la soo bandhigayaa
         setShifts((s?.shifts || []).filter((x) => Boolean(x.is_active)));
       } catch (err) {
         if (mounted) {
@@ -36,7 +36,6 @@ export default function AssignShiftForm({ onAssigned }) {
         if (mounted) setLoading(false);
       }
     })();
-
     return () => {
       mounted = false;
     };
@@ -54,25 +53,20 @@ export default function AssignShiftForm({ onAssigned }) {
 
   const submit = async (e) => {
     e.preventDefault();
-
     if (!user_id) {
       showToast("Please select employee", "error");
       return;
     }
-
     if (!shift_id) {
       showToast("Please select shift", "error");
       return;
     }
-
     setBusy(true);
-
     try {
       await shiftsApi.assign({
         user_id: Number(user_id),
         shift_id: Number(shift_id),
       });
-
       showToast("Shift assigned successfully", "success");
       onAssigned?.();
     } catch (err) {
@@ -98,10 +92,8 @@ export default function AssignShiftForm({ onAssigned }) {
       <div className="space-y-4">
         <div>
           <label className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-brand-text/60">
-            <UserCheck size={14} className="text-brand-blue" />
-            Choose Employee
+            <UserCheck size={14} className="text-brand-blue" /> Choose Employee
           </label>
-
           <select
             value={user_id}
             onChange={(e) => setUserId(e.target.value)}
@@ -115,13 +107,10 @@ export default function AssignShiftForm({ onAssigned }) {
             ))}
           </select>
         </div>
-
         <div>
           <label className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-brand-text/60">
-            <Clock size={14} className="text-amber-400" />
-            Target Work Shift
+            <Clock size={14} className="text-amber-400" /> Target Work Shift
           </label>
-
           <select
             value={shift_id}
             onChange={(e) => setShiftId(e.target.value)}
@@ -152,7 +141,6 @@ export default function AssignShiftForm({ onAssigned }) {
               )}
             </span>
           </div>
-
           <div className="mt-2 flex items-center gap-2">
             <Clock size={15} className="text-brand-blue" />
             <span>

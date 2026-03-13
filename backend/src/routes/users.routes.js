@@ -35,6 +35,33 @@ const adminUpdateSchema = z.object({
   is_active: z.boolean().optional(),
 });
 
+async function getUserWithShift(userId) {
+  const result = await pool.query(
+    `SELECT 
+        u.id,
+        u.full_name,
+        u.email,
+        u.role,
+        u.hourly_rate,
+        u.shift_id,
+        u.is_active,
+        u.created_at,
+        u.phone,
+        u.address,
+        s.code AS shift_code,
+        s.name AS shift_name,
+        s.start_time::text AS shift_start,
+        s.end_time::text AS shift_end
+     FROM users u
+     LEFT JOIN shifts s ON s.id = u.shift_id
+     WHERE u.id = $1
+     LIMIT 1`,
+    [userId]
+  );
+
+  return result.rowCount ? result.rows[0] : null;
+}
+
 router.get("/", requireAuth, requireRole("ADMIN"), async (req, res, next) => {
   try {
     const result = await pool.query(
@@ -111,17 +138,7 @@ router.post("/", requireAuth, requireRole("ADMIN"), async (req, res, next) => {
         address
       )
       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
-      RETURNING
-        id,
-        full_name,
-        email,
-        role,
-        hourly_rate,
-        shift_id,
-        is_active,
-        phone,
-        address,
-        created_at`,
+      RETURNING id`,
       [
         data.full_name.trim(),
         data.email.trim().toLowerCase(),
@@ -134,6 +151,8 @@ router.post("/", requireAuth, requireRole("ADMIN"), async (req, res, next) => {
         data.address ?? null,
       ]
     );
+
+    const createdUser = await getUserWithShift(ins.rows[0].id);
 
     await auditLog({
       actor_user_id: req.user.id,
@@ -150,7 +169,7 @@ router.post("/", requireAuth, requireRole("ADMIN"), async (req, res, next) => {
 
     res.status(201).json({
       message: "User created successfully",
-      user: ins.rows[0],
+      user: createdUser,
     });
   } catch (e) {
     next(e);
@@ -159,28 +178,13 @@ router.post("/", requireAuth, requireRole("ADMIN"), async (req, res, next) => {
 
 router.get("/me", requireAuth, async (req, res, next) => {
   try {
-    const r = await pool.query(
-      `SELECT 
-          id,
-          full_name,
-          email,
-          role,
-          hourly_rate,
-          shift_id,
-          is_active,
-          phone,
-          address,
-          created_at
-       FROM users
-       WHERE id = $1`,
-      [req.user.id]
-    );
+    const user = await getUserWithShift(req.user.id);
 
-    if (r.rowCount === 0) {
+    if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
 
-    return res.json({ user: r.rows[0] });
+    return res.json({ user });
   } catch (e) {
     next(e);
   }
@@ -210,23 +214,15 @@ router.put("/me", requireAuth, async (req, res, next) => {
       `UPDATE users
        SET ${sets}
        WHERE id = $${keys.length + 1}
-       RETURNING
-         id,
-         full_name,
-         email,
-         role,
-         hourly_rate,
-         shift_id,
-         is_active,
-         phone,
-         address,
-         created_at`,
+       RETURNING id`,
       [...values, req.user.id]
     );
 
     if (upd.rowCount === 0) {
       return res.status(404).json({ message: "User not found" });
     }
+
+    const updatedUser = await getUserWithShift(req.user.id);
 
     await auditLog({
       actor_user_id: req.user.id,
@@ -236,7 +232,7 @@ router.put("/me", requireAuth, async (req, res, next) => {
       meta: fields,
     });
 
-    return res.json({ user: upd.rows[0] });
+    return res.json({ user: updatedUser });
   } catch (e) {
     next(e);
   }
@@ -282,23 +278,15 @@ router.put("/:id", requireAuth, requireRole("ADMIN"), async (req, res, next) => 
       `UPDATE users
        SET ${sets}
        WHERE id = $${keys.length + 1}
-       RETURNING
-         id,
-         full_name,
-         email,
-         role,
-         hourly_rate,
-         shift_id,
-         is_active,
-         phone,
-         address,
-         created_at`,
+       RETURNING id`,
       [...values, id]
     );
 
     if (upd.rowCount === 0) {
       return res.status(404).json({ message: "User not found" });
     }
+
+    const updatedUser = await getUserWithShift(id);
 
     await auditLog({
       actor_user_id: req.user.id,
@@ -308,7 +296,7 @@ router.put("/:id", requireAuth, requireRole("ADMIN"), async (req, res, next) => 
       meta: fields,
     });
 
-    res.json({ user: upd.rows[0] });
+    res.json({ user: updatedUser });
   } catch (e) {
     next(e);
   }

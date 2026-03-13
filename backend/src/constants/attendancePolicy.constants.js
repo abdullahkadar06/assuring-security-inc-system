@@ -1,0 +1,24 @@
+export const SYSTEM_TIMEZONE = "Africa/Mogadishu"; // Hargeisa = UTC+3
+export const SYSTEM_UTC_OFFSET_MINUTES = 180;
+
+export const MAX_SHIFT_HOURS = 8;
+export const MAX_SHIFT_MINUTES = MAX_SHIFT_HOURS * 60;
+
+export const DEFAULT_GRACE_BEFORE_MINUTES = 15;
+export const DEFAULT_GRACE_AFTER_MINUTES = 60;
+
+export const ATTENDANCE_STATUS = {
+  OPEN: "OPEN",
+  CLOSED: "CLOSED",
+  AUTO_CLOSED: "AUTO_CLOSED",
+};
+
+export const SHIFT_KIND = {
+  MORNING: "MORNING",
+  NIGHT: "NIGHT",
+};
+
+export const CLOSE_REASON = {
+  MANUAL: "MANUAL",
+  AUTO_SHIFT_CLOSE: "AUTO_SHIFT_CLOSE",
+};

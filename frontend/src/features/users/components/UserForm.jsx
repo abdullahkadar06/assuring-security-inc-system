@@ -4,10 +4,10 @@ import Button from "../../../components/ui/Button";
 import { useUiStore } from "../../../state/ui/ui.store";
 import { usersApi } from "../../../api/users.api";
 import { shiftsApi } from "../../../api/shifts.api";
+import { formatShiftOption } from "../../../utils/shiftFormatter";
 
 function getLocationPlaceholders() {
   const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "";
-
   if (tz.includes("Africa")) {
     return {
       phone: "e.g. +252 63 4123456",
@@ -15,7 +15,6 @@ function getLocationPlaceholders() {
       hourlyRate: "e.g. 10",
     };
   }
-
   if (tz.includes("America")) {
     return {
       phone: "e.g. +1 720 555 1234",
@@ -23,7 +22,6 @@ function getLocationPlaceholders() {
       hourlyRate: "e.g. 18",
     };
   }
-
   if (tz.includes("Europe")) {
     return {
       phone: "e.g. +44 7700 900123",
@@ -31,7 +29,6 @@ function getLocationPlaceholders() {
       hourlyRate: "e.g. 15",
     };
   }
-
   return {
     phone: "e.g. +252 63 4123456",
     address: "Enter full address",
@@ -42,7 +39,6 @@ function getLocationPlaceholders() {
 export default function UserForm({ onSaved }) {
   const showToast = useUiStore((s) => s.showToast);
   const placeholders = useMemo(() => getLocationPlaceholders(), []);
-
   const [busy, setBusy] = useState(false);
   const [loadingShifts, setLoadingShifts] = useState(true);
   const [shifts, setShifts] = useState([]);
@@ -63,7 +59,7 @@ export default function UserForm({ onSaved }) {
       try {
         const res = await shiftsApi.list();
         if (mounted) {
-          setShifts(res?.shifts || []);
+          setShifts((res?.shifts || []).filter((x) => Boolean(x.is_active)));
         }
       } catch (e) {
         if (mounted) {
@@ -91,17 +87,14 @@ export default function UserForm({ onSaved }) {
       showToast("Full name is required", "error");
       return;
     }
-
     if (!email.trim()) {
       showToast("Email is required", "error");
       return;
     }
-
     if (!password.trim()) {
       showToast("Password is required", "error");
       return;
     }
-
     if (hourly_rate !== "" && Number(hourly_rate) < 0) {
       showToast("Hourly rate cannot be negative", "error");
       return;
@@ -122,7 +115,6 @@ export default function UserForm({ onSaved }) {
       });
 
       showToast("User created successfully", "success");
-
       setName("");
       setEmail("");
       setPhone("");
@@ -131,7 +123,6 @@ export default function UserForm({ onSaved }) {
       setRole("EMPLOYEE");
       setRate("");
       setShiftId("");
-
       onSaved?.();
     } catch (e2) {
       showToast(e2?.response?.data?.message || "Create failed", "error");
@@ -219,7 +210,7 @@ export default function UserForm({ onSaved }) {
             </option>
             {shifts.map((shift) => (
               <option key={shift.id} value={shift.id}>
-                {shift.name} ({shift.code})
+                {formatShiftOption(shift)}
               </option>
             ))}
           </select>

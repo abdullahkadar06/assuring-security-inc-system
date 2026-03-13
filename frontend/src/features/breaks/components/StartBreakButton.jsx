@@ -9,6 +9,9 @@ export default function StartBreakButton() {
     try {
       await breaksApi.start({});
       showToast("Break started");
+      window.dispatchEvent(new Event("break:changed"));
+      window.dispatchEvent(new Event("attendance:changed"));
+      window.dispatchEvent(new Event("payroll:changed"));
     } catch (e) {
       showToast(e?.response?.data?.message || "Failed", "error");
     }

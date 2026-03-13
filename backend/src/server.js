@@ -17,13 +17,12 @@ import adminRoutes from "./routes/admin.routes.js";
 
 // Error middleware
 import { errorHandler } from "./middleware/error.middleware.js";
+import { startAttendanceAutoCloseJob } from "./jobs/attendanceAutoClose.job.js";
 
 const app = express();
 
-// Body parser
 app.use(express.json());
 
-// CORS
 app.use(
   cors({
     origin: [
@@ -34,22 +33,19 @@ app.use(
   })
 );
 
-// Root test
 app.get("/", (req, res) => {
   res.json({ message: "API is running" });
 });
 
-// 🚀 KEEP-ALIVE PING (UptimeRobot endpoint)
 app.get("/api/ping", async (req, res) => {
   try {
-    await pool.query("SELECT 1"); 
+    await pool.query("SELECT 1");
     res.status(200).json({ message: "System is awake and healthy!" });
   } catch (error) {
     res.status(500).json({ message: "Database connection error" });
   }
 });
 
-// Health check
 app.get("/api/health", async (req, res, next) => {
   try {
     const result = await pool.query("SELECT NOW() as now");
@@ -63,7 +59,6 @@ app.get("/api/health", async (req, res, next) => {
   }
 });
 
-// API routes
 app.use("/api/auth", authRoutes);
 app.use("/api/users", usersRoutes);
 app.use("/api/shifts", shiftsRoutes);
@@ -75,12 +70,11 @@ app.use("/api/reports", reportsRoutes);
 app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/admin", adminRoutes);
 
-// 404
 app.use((req, res) => res.status(404).json({ message: "Route not found" }));
 
-// Error handler
 app.use(errorHandler);
 
 app.listen(env.port, () => {
   console.log(`API running on http://localhost:${env.port}`);
+  startAttendanceAutoCloseJob();
 });

@@ -1,9 +1,14 @@
-import { ClipboardCheck, LogIn, LogOut, CalendarDays } from "lucide-react";
+import { ClipboardCheck, LogIn, LogOut, CalendarDays, Clock3 } from "lucide-react";
 import TodaySummaryCard from "../components/TodaySummaryCard";
 import CheckInButton from "../components/CheckInButton";
 import CheckOutButton from "../components/CheckOutButton";
+import { useAuth } from "../../../hooks/useAuth";
+import { formatUserShift } from "../../../utils/shiftFormatter";
 
 export default function AttendancePage() {
+  const { user } = useAuth();
+  const shiftText = formatUserShift(user);
+
   return (
     <div className="space-y-4">
       <div className="rounded-2xl border border-brand-line/70 bg-brand-card/30 p-4">
@@ -18,6 +23,15 @@ export default function AttendancePage() {
             </div>
           </div>
         </div>
+      </div>
+
+      <div className="rounded-2xl border border-brand-line/70 bg-brand-card/20 p-3">
+        <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-brand-text/80">
+          <Clock3 size={16} className="text-brand-blue" />
+          <span>Assigned Shift</span>
+        </div>
+
+        <div className="text-sm font-semibold text-white">{shiftText}</div>
       </div>
 
       <div className="rounded-2xl border border-brand-line/70 bg-brand-card/20 p-3">
