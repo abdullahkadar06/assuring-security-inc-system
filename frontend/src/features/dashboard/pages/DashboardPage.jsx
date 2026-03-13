@@ -8,6 +8,7 @@ import { useRole } from "../../../hooks/useRole";
 import { useAuth } from "../../../hooks/useAuth";
 import CompactAnalytics from "../components/CompactAnalytics";
 import { formatUserShift } from "../../../utils/shiftFormatter";
+import { formatBreakMinutesPrecise } from "../../../utils/format";
 import {
   Activity,
   Wallet,
@@ -30,31 +31,6 @@ function formatDays(value) {
 
 function formatMoney(value) {
   return `$${Number(value ?? 0).toFixed(2)}`;
-}
-
-function formatBreakDuration(totalMinutes = 0) {
-  const mins = Math.max(0, Number(totalMinutes || 0));
-
-  if (mins <= 0) return "0s";
-
-  if (mins < 1) {
-    const seconds = Math.max(1, Math.round(mins * 60));
-    return `${seconds}s`;
-  }
-
-  if (mins < 60) {
-    return `${Math.round(mins)}m`;
-  }
-
-  const roundedMinutes = Math.round(mins);
-  const hours = Math.floor(roundedMinutes / 60);
-  const remainingMinutes = roundedMinutes % 60;
-
-  if (remainingMinutes === 0) {
-    return `${hours}h`;
-  }
-
-  return `${hours}h ${remainingMinutes}m`;
 }
 
 export default function DashboardPage() {
@@ -170,7 +146,7 @@ export default function DashboardPage() {
         <div className="col-span-2">
           <StatCard
             title="Break today"
-            value={formatBreakDuration(breakTodayMinutes)}
+            value={formatBreakMinutesPrecise(breakTodayMinutes)}
             icon={<Coffee size={20} />}
           />
         </div>

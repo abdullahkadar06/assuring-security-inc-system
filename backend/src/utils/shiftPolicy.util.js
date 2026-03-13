@@ -76,6 +76,7 @@ function buildMorningShift(anchorDate) {
     0,
     0
   );
+
   const scheduledEnd = buildSystemDate(
     parts.year,
     parts.month,
@@ -105,24 +106,19 @@ function buildNightShift(anchorDate) {
   let shiftCode = "NIGHT";
   let shiftName = "Night Shift";
 
-  // Saturday night: 23:00 -> 07:00
   if (parts.weekday === 6) {
     startHour = 23;
     endHour = 7;
     endDayOffset = 1;
     shiftCode = "SATURDAY_NIGHT";
-    shiftName = "Saturday Night Shift";
-  }
-  // Sunday night: 23:00 -> 08:00
-  else if (parts.weekday === 0) {
+    shiftName = "Night Shift";
+  } else if (parts.weekday === 0) {
     startHour = 23;
     endHour = 8;
     endDayOffset = 1;
     shiftCode = "SUNDAY_NIGHT";
-    shiftName = "Sunday Night Shift";
-  }
-  // Other nights: 00:00 -> 08:00
-  else {
+    shiftName = "Night Shift";
+  } else {
     startHour = 0;
     endHour = 8;
     endDayOffset = 0;
@@ -174,9 +170,8 @@ function applyGraceWindow(policy, graceBeforeMinutes, graceAfterMinutes) {
     policy.scheduledStart.getTime() - graceBefore * 60_000
   );
 
-  // Important:
-  // clock-in remains open until scheduled_end
-  // graceAfter is only for late calculation
+  // clock-in remains valid until shift end
+  // graceAfter is used for late calculation, not for closing the clock-in window
   const latest = new Date(policy.scheduledEnd.getTime());
 
   return {
@@ -243,6 +238,7 @@ export function calculateLateMinutes({
 
   if (diffMinutes <= 0) return 0;
   if (diffMinutes <= graceAfterMinutes) return diffMinutes;
+
   return graceAfterMinutes;
 }
 

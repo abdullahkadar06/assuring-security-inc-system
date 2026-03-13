@@ -81,6 +81,7 @@ function resolvePolicyForAnchorDate(anchorDate, shiftKind) {
     };
   }
 
+  // Saturday night => 23:00 -> next day 07:00
   if (dow === 6) {
     return {
       scheduledStart: makeDate(anchor, 23, 0, 0),
@@ -88,6 +89,7 @@ function resolvePolicyForAnchorDate(anchorDate, shiftKind) {
     };
   }
 
+  // Sunday night => 23:00 -> next day 08:00
   if (dow === 0) {
     return {
       scheduledStart: makeDate(anchor, 23, 0, 0),
@@ -95,6 +97,7 @@ function resolvePolicyForAnchorDate(anchorDate, shiftKind) {
     };
   }
 
+  // Other nights => 00:00 -> 08:00
   return {
     scheduledStart: makeDate(anchor, 0, 0, 0),
     scheduledEnd: makeDate(anchor, 8, 0, 0),
@@ -518,7 +521,10 @@ router.get(
              )::numeric,
              2
            ) AS paid_hours,
-           COUNT(*) FILTER (WHERE late_minutes > 0 AND status = ANY($3::text[])) AS late_count,
+           COUNT(*) FILTER (
+             WHERE late_minutes > 0
+               AND status = ANY($3::text[])
+           ) AS late_count,
            ROUND(
              COALESCE(
                SUM(total_pay) FILTER (WHERE status = ANY($3::text[])),

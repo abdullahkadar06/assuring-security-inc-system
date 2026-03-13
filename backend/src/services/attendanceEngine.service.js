@@ -131,8 +131,6 @@ export async function clockInUser({ userId, actorUserId }) {
 
   try {
     await client.query("BEGIN");
-
-    // protect against double click / race condition
     await client.query("SELECT pg_advisory_xact_lock($1)", [Number(userId)]);
 
     const us = await getUserShift(client, userId);
@@ -187,7 +185,6 @@ export async function clockInUser({ userId, actorUserId }) {
       };
     }
 
-    // prevent second attendance for same scheduled shift
     const existingSameShift = await client.query(
       `SELECT id, status
        FROM attendance

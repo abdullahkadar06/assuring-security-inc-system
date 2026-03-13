@@ -1,6 +1,10 @@
 import { Router } from "express";
 import { requireAuth } from "../middleware/auth.middleware.js";
-import { clockInUser, clockOutUser, getTodayAttendanceForUser } from "../services/attendanceEngine.service.js";
+import {
+  clockInUser,
+  clockOutUser,
+  getTodayAttendanceForUser,
+} from "../services/attendanceEngine.service.js";
 
 const router = Router();
 
@@ -34,7 +38,7 @@ router.post("/clock-out", requireAuth, async (req, res, next) => {
 router.get("/today", requireAuth, async (req, res, next) => {
   try {
     const attendance = await getTodayAttendanceForUser(req.user.id);
-    res.json({ attendance });
+    return res.json({ attendance });
   } catch (e) {
     next(e);
   }

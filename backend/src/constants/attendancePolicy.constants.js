@@ -1,4 +1,4 @@
-export const SYSTEM_TIMEZONE = "Africa/Mogadishu"; // Hargeisa = UTC+3
+export const SYSTEM_TIMEZONE = "Africa/Mogadishu";
 export const SYSTEM_UTC_OFFSET_MINUTES = 180;
 
 export const MAX_SHIFT_HOURS = 8;

@@ -11,15 +11,64 @@ function getShiftKind(source = {}) {
   const code = String(source?.shift_code || source?.code || "").toUpperCase();
   const name = String(source?.shift_name || source?.name || "").toUpperCase();
 
-  if (code.includes("MORNING") || name.includes("MORNING")) {
-    return "MORNING";
-  }
-
   if (code.includes("NIGHT") || name.includes("NIGHT")) {
     return "NIGHT";
   }
 
+  if (code.includes("MORNING") || name.includes("MORNING")) {
+    return "MORNING";
+  }
+
   return null;
+}
+
+function getNightPolicyRange(date = new Date()) {
+  const d = new Date(date);
+  const day = d.getDay(); // 0=Sun ... 6=Sat
+  const hour = d.getHours();
+
+  // after midnight but before 08:00 on Monday belongs to Sunday night
+  if (day === 1 && hour < 8) {
+    return {
+      name: "Night Shift",
+      start: "23:00",
+      end: "08:00",
+    };
+  }
+
+  // after midnight but before 07:00 on Sunday belongs to Saturday night
+  if (day === 0 && hour < 7) {
+    return {
+      name: "Night Shift",
+      start: "23:00",
+      end: "07:00",
+    };
+  }
+
+  // Saturday night
+  if (day === 6) {
+    return {
+      name: "Night Shift",
+      start: "23:00",
+      end: "07:00",
+    };
+  }
+
+  // Sunday night
+  if (day === 0) {
+    return {
+      name: "Night Shift",
+      start: "23:00",
+      end: "08:00",
+    };
+  }
+
+  // normal weekday night
+  return {
+    name: "Night Shift",
+    start: "00:00",
+    end: "08:00",
+  };
 }
 
 function getPolicyTimeRange(shiftKind, date = new Date()) {
@@ -32,29 +81,7 @@ function getPolicyTimeRange(shiftKind, date = new Date()) {
   }
 
   if (shiftKind === "NIGHT") {
-    const day = new Date(date).getDay(); // 0=Sun ... 6=Sat
-
-    if (day === 6) {
-      return {
-        name: "Night Shift",
-        start: "23:00",
-        end: "07:00",
-      };
-    }
-
-    if (day === 0) {
-      return {
-        name: "Night Shift",
-        start: "23:00",
-        end: "08:00",
-      };
-    }
-
-    return {
-      name: "Night Shift",
-      start: "00:00",
-      end: "08:00",
-    };
+    return getNightPolicyRange(date);
   }
 
   return null;
@@ -71,23 +98,10 @@ export function formatShiftTimeRange(start, end) {
 export function formatShiftLabel(shift) {
   if (!shift) return "Not Assigned";
 
-  const name =
-    shift.shift_name ||
-    shift.name ||
-    shift.code ||
-    "Shift";
+  const name = shift.shift_name || shift.name || shift.code || "Shift";
 
-  const start =
-    shift.shift_start ||
-    shift.start_time ||
-    shift.start ||
-    null;
-
-  const end =
-    shift.shift_end ||
-    shift.end_time ||
-    shift.end ||
-    null;
+  const start = shift.shift_start || shift.start_time || shift.start || null;
+  const end = shift.shift_end || shift.end_time || shift.end || null;
 
   const range = formatShiftTimeRange(start, end);
 

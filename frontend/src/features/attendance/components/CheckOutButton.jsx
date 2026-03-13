@@ -56,7 +56,9 @@ export default function CheckOutButton() {
   const buttonText = useMemo(() => {
     if (busy) return "Checking out...";
     if (loadingState) return "Loading...";
-    if (latestStatus === "CLOSED" || latestStatus === "AUTO_CLOSED") return "Already Closed";
+    if (latestStatus === "CLOSED" || latestStatus === "AUTO_CLOSED") {
+      return "Already Closed";
+    }
     if (latestStatus === "NONE") return "No Open Shift";
     return "Clock Out";
   }, [busy, loadingState, latestStatus]);
@@ -68,20 +70,13 @@ export default function CheckOutButton() {
     try {
       const res = await attendanceApi.clockOut({});
 
-      showToast(
-        res?.body?.message ||
-          res?.message ||
-          "Clock-out successful"
-      );
+      showToast(res?.message || "Clock-out successful");
 
       window.dispatchEvent(new Event("attendance:changed"));
       window.dispatchEvent(new Event("break:changed"));
       window.dispatchEvent(new Event("payroll:changed"));
     } catch (e) {
-      showToast(
-        e?.response?.data?.message || "Clock-out failed",
-        "error"
-      );
+      showToast(e?.response?.data?.message || "Clock-out failed", "error");
     } finally {
       setBusy(false);
     }

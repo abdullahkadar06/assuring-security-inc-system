@@ -19,13 +19,27 @@ async function findOpenAttendanceForUser(userId) {
   const open = await pool.query(
     `SELECT id
      FROM attendance
-     WHERE user_id = $1 AND status = 'OPEN'
+     WHERE user_id = $1
+       AND status = 'OPEN'
      ORDER BY id DESC
      LIMIT 1`,
     [userId]
   );
 
   return open.rowCount ? open.rows[0].id : null;
+}
+
+async function ensureAttendanceBelongsToUser(attendanceId, userId) {
+  const result = await pool.query(
+    `SELECT id
+     FROM attendance
+     WHERE id = $1
+       AND user_id = $2
+     LIMIT 1`,
+    [attendanceId, userId]
+  );
+
+  return result.rowCount > 0;
 }
 
 router.get("/current", requireAuth, async (req, res, next) => {
@@ -62,18 +76,33 @@ router.post("/start", requireAuth, async (req, res, next) => {
   try {
     const parsed = startSchema.safeParse(req.body ?? {});
     if (!parsed.success) {
-      return res
-        .status(400)
-        .json({ message: "Invalid payload", errors: parsed.error.flatten() });
+      return res.status(400).json({
+        message: "Invalid payload",
+        errors: parsed.error.flatten(),
+      });
     }
 
-    const attendanceId =
-      parsed.data.attendance_id ?? (await findOpenAttendanceForUser(req.user.id));
+    let attendanceId = parsed.data.attendance_id;
+
+    if (attendanceId) {
+      const allowed = await ensureAttendanceBelongsToUser(
+        attendanceId,
+        req.user.id
+      );
+
+      if (!allowed) {
+        return res.status(403).json({
+          message: "Attendance record does not belong to this user.",
+        });
+      }
+    } else {
+      attendanceId = await findOpenAttendanceForUser(req.user.id);
+    }
 
     if (!attendanceId) {
-      return res
-        .status(404)
-        .json({ message: "No OPEN attendance found. Clock-in first." });
+      return res.status(404).json({
+        message: "No open attendance found. Clock in first.",
+      });
     }
 
     const openBreak = await pool.query(
@@ -87,9 +116,9 @@ router.post("/start", requireAuth, async (req, res, next) => {
     );
 
     if (openBreak.rowCount > 0) {
-      return res
-        .status(409)
-        .json({ message: "Break already started (open break exists)" });
+      return res.status(409).json({
+        message: "An active break already exists.",
+      });
     }
 
     const ins = await pool.query(
@@ -107,7 +136,10 @@ router.post("/start", requireAuth, async (req, res, next) => {
       meta: { attendance_id: attendanceId },
     });
 
-    res.status(201).json({ break: ins.rows[0] });
+    return res.status(201).json({
+      break: ins.rows[0],
+      message: "Break started successfully.",
+    });
   } catch (e) {
     next(e);
   }
@@ -117,19 +149,36 @@ router.post("/end", requireAuth, async (req, res, next) => {
   try {
     const parsed = endSchema.safeParse(req.body ?? {});
     if (!parsed.success) {
-      return res
-        .status(400)
-        .json({ message: "Invalid payload", errors: parsed.error.flatten() });
+      return res.status(400).json({
+        message: "Invalid payload",
+        errors: parsed.error.flatten(),
+      });
     }
 
     let breakId = parsed.data.break_id;
 
     if (!breakId) {
-      const attendanceId =
-        parsed.data.attendance_id ?? (await findOpenAttendanceForUser(req.user.id));
+      let attendanceId = parsed.data.attendance_id;
+
+      if (attendanceId) {
+        const allowed = await ensureAttendanceBelongsToUser(
+          attendanceId,
+          req.user.id
+        );
+
+        if (!allowed) {
+          return res.status(403).json({
+            message: "Attendance record does not belong to this user.",
+          });
+        }
+      } else {
+        attendanceId = await findOpenAttendanceForUser(req.user.id);
+      }
 
       if (!attendanceId) {
-        return res.status(404).json({ message: "No OPEN attendance found." });
+        return res.status(404).json({
+          message: "No open attendance found.",
+        });
       }
 
       const openBreak = await pool.query(
@@ -143,10 +192,28 @@ router.post("/end", requireAuth, async (req, res, next) => {
       );
 
       if (openBreak.rowCount === 0) {
-        return res.status(404).json({ message: "No open break found to end" });
+        return res.status(404).json({
+          message: "No active break found.",
+        });
       }
 
       breakId = openBreak.rows[0].id;
+    } else {
+      const ownedBreak = await pool.query(
+        `SELECT b.id
+         FROM breaks b
+         JOIN attendance a ON a.id = b.attendance_id
+         WHERE b.id = $1
+           AND a.user_id = $2
+         LIMIT 1`,
+        [breakId, req.user.id]
+      );
+
+      if (ownedBreak.rowCount === 0) {
+        return res.status(403).json({
+          message: "Break record does not belong to this user.",
+        });
+      }
     }
 
     const upd = await pool.query(
@@ -159,9 +226,9 @@ router.post("/end", requireAuth, async (req, res, next) => {
     );
 
     if (upd.rowCount === 0) {
-      return res
-        .status(409)
-        .json({ message: "Break already ended or not found" });
+      return res.status(409).json({
+        message: "Break is already closed or was not found.",
+      });
     }
 
     await auditLog({
@@ -169,10 +236,13 @@ router.post("/end", requireAuth, async (req, res, next) => {
       action: "BREAK_END",
       entity: "breaks",
       entity_id: upd.rows[0].id,
-      meta: {},
+      meta: { attendance_id: upd.rows[0].attendance_id },
     });
 
-    res.json({ break: upd.rows[0] });
+    return res.json({
+      break: upd.rows[0],
+      message: "Break ended successfully.",
+    });
   } catch (e) {
     next(e);
   }

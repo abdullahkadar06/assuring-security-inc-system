@@ -3,6 +3,7 @@ import Card from "../../../components/ui/Card";
 import Loader from "../../../components/ui/Loader";
 import { dashboardApi } from "../../../api/dashboard.api";
 import { useUiStore } from "../../../state/ui/ui.store";
+import { formatBreakMinutesPrecise } from "../../../utils/format";
 
 function formatClock(value) {
   if (!value) return "-";
@@ -16,31 +17,6 @@ function formatClock(value) {
 
 function formatHours(value) {
   return Number(value ?? 0).toFixed(2);
-}
-
-function formatBreakDuration(totalMinutes = 0) {
-  const mins = Math.max(0, Number(totalMinutes || 0));
-
-  if (mins <= 0) return "0s";
-
-  if (mins < 1) {
-    const seconds = Math.max(1, Math.round(mins * 60));
-    return `${seconds}s`;
-  }
-
-  if (mins < 60) {
-    return `${Math.round(mins)}m`;
-  }
-
-  const roundedMinutes = Math.round(mins);
-  const hours = Math.floor(roundedMinutes / 60);
-  const remainingMinutes = roundedMinutes % 60;
-
-  if (remainingMinutes === 0) {
-    return `${hours}h`;
-  }
-
-  return `${hours}h ${remainingMinutes}m`;
 }
 
 export default function TodaySummaryCard() {
@@ -128,7 +104,7 @@ export default function TodaySummaryCard() {
           <div>
             <div className="text-brand-text/65">Break</div>
             <div className="font-semibold text-white">
-              {formatBreakDuration(latest.break_minutes)}
+              {formatBreakMinutesPrecise(latest.break_minutes)}
             </div>
           </div>
         </div>

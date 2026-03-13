@@ -5,6 +5,7 @@ let timer = null;
 
 export function startAttendanceAutoCloseJob() {
   if (started) return;
+
   started = true;
 
   timer = setInterval(async () => {
@@ -22,6 +23,7 @@ export function stopAttendanceAutoCloseJob() {
   if (timer) {
     clearInterval(timer);
     timer = null;
-    started = false;
   }
+
+  started = false;
 }
