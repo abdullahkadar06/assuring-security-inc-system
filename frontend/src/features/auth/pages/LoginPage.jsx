@@ -4,8 +4,6 @@ import LoginForm from "../components/LoginForm";
 export default function LoginPage() {
   return (
     <div className="space-y-6">
-
-      {/* LOGO ONLY */}
       <div className="flex justify-center pt-6">
         <div className="rounded-3xl bg-white px-6 py-4 shadow-lg">
           <img
@@ -16,18 +14,12 @@ export default function LoginPage() {
         </div>
       </div>
 
-      {/* TITLE */}
       <Card className="rounded-3xl text-center">
-        <div className="text-2xl font-bold">
-          Assuring Security Inc
-        </div>
+        <div className="text-2xl font-bold">Assuring Security Inc</div>
 
-        <div className="text-sm text-brand-text/70">
-          Login to continue
-        </div>
+        <div className="text-sm text-brand-text/70">Login to continue</div>
       </Card>
 
-      {/* LOGIN FORM */}
       <Card className="rounded-3xl">
         <LoginForm />
       </Card>

@@ -2,37 +2,81 @@ import { Router } from "express";
 import { pool } from "../db/pool.js";
 import { requireAuth } from "../middleware/auth.middleware.js";
 import { requireRole } from "../middleware/requireRole.js";
+import { getTodayAttendanceForUser } from "../services/attendanceEngine.service.js";
+import {
+  FINALIZED_ATTENDANCE_STATUSES,
+  SYSTEM_UTC_OFFSET_MINUTES,
+} from "../constants/attendancePolicy.constants.js";
 
 const router = Router();
 
-const WEEKLY_INCLUDED_STATUSES = ["OPEN", "CLOSED", "AUTO_CLOSED"];
+const OFFSET_MS = SYSTEM_UTC_OFFSET_MINUTES * 60 * 1000;
 
-function payrollWindowByFriday(today = new Date()) {
-  const d = new Date(today);
-  d.setHours(0, 0, 0, 0);
-
-  const dow = d.getDay(); // 0=Sun ... 6=Sat
-  const diffToFri = (dow - 5 + 7) % 7;
-
-  const weekEnd = new Date(d);
-  weekEnd.setDate(weekEnd.getDate() - diffToFri);
-
-  const weekStart = new Date(weekEnd);
-  weekStart.setDate(weekStart.getDate() - 6);
-
-  return { weekStart, weekEnd };
+function toSystemPseudo(date) {
+  return new Date(date.getTime() + OFFSET_MS);
 }
 
-function toLocalISODate(d) {
-  const x = new Date(d);
-  const year = x.getFullYear();
-  const month = String(x.getMonth() + 1).padStart(2, "0");
-  const day = String(x.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
+function fromSystemPseudo(date) {
+  return new Date(date.getTime() - OFFSET_MS);
+}
+
+function getSystemParts(date = new Date()) {
+  const d = toSystemPseudo(date);
+  return {
+    year: d.getUTCFullYear(),
+    month: d.getUTCMonth() + 1,
+    day: d.getUTCDate(),
+    weekday: d.getUTCDay(), // 0 Sun ... 6 Sat
+  };
+}
+
+function buildSystemDate(year, month, day, hour = 0, minute = 0, second = 0) {
+  const pseudo = new Date(Date.UTC(year, month - 1, day, hour, minute, second));
+  return fromSystemPseudo(pseudo);
+}
+
+function startOfSystemDay(date) {
+  const p = getSystemParts(date);
+  return buildSystemDate(p.year, p.month, p.day, 0, 0, 0);
+}
+
+function addSystemDays(date, days) {
+  const pseudo = toSystemPseudo(date);
+  pseudo.setUTCDate(pseudo.getUTCDate() + days);
+  return fromSystemPseudo(pseudo);
+}
+
+function getSystemDateISO(date = new Date()) {
+  const p = getSystemParts(date);
+  return `${String(p.year)}-${String(p.month).padStart(2, "0")}-${String(
+    p.day
+  ).padStart(2, "0")}`;
+}
+
+function getCurrentSaturdayFridayWindow(today = new Date()) {
+  const dayStart = startOfSystemDay(today);
+  const p = getSystemParts(dayStart);
+
+  const daysSinceSaturday = (p.weekday - 6 + 7) % 7;
+  const weekStart = addSystemDays(dayStart, -daysSinceSaturday);
+  const weekEnd = addSystemDays(weekStart, 6);
+
+  return { weekStart, weekEnd, effectiveEnd: dayStart };
 }
 
 function minDate(a, b) {
   return a.getTime() <= b.getTime() ? a : b;
+}
+
+function getShiftKind(userShift) {
+  const code = String(userShift?.code || "").toUpperCase();
+  const name = String(userShift?.name || "").toUpperCase();
+
+  if (code.includes("NIGHT") || name.includes("NIGHT")) {
+    return "NIGHT";
+  }
+
+  return "MORNING";
 }
 
 function startOfDay(d) {
@@ -59,20 +103,9 @@ function makeDate(baseDate, hour, minute = 0, second = 0) {
   );
 }
 
-function getShiftKind(userShift) {
-  const code = String(userShift?.code || "").toUpperCase();
-  const name = String(userShift?.name || "").toUpperCase();
-
-  if (code.includes("NIGHT") || name.includes("NIGHT")) {
-    return "NIGHT";
-  }
-
-  return "MORNING";
-}
-
 function resolvePolicyForAnchorDate(anchorDate, shiftKind) {
   const anchor = startOfDay(anchorDate);
-  const dow = anchor.getDay(); // 0=Sun ... 6=Sat
+  const dow = anchor.getDay();
 
   if (shiftKind === "MORNING") {
     return {
@@ -81,7 +114,6 @@ function resolvePolicyForAnchorDate(anchorDate, shiftKind) {
     };
   }
 
-  // Saturday night => 23:00 -> next day 07:00
   if (dow === 6) {
     return {
       scheduledStart: makeDate(anchor, 23, 0, 0),
@@ -89,7 +121,6 @@ function resolvePolicyForAnchorDate(anchorDate, shiftKind) {
     };
   }
 
-  // Sunday night => 23:00 -> next day 08:00
   if (dow === 0) {
     return {
       scheduledStart: makeDate(anchor, 23, 0, 0),
@@ -97,7 +128,6 @@ function resolvePolicyForAnchorDate(anchorDate, shiftKind) {
     };
   }
 
-  // Other nights => 00:00 -> 08:00
   return {
     scheduledStart: makeDate(anchor, 0, 0, 0),
     scheduledEnd: makeDate(anchor, 8, 0, 0),
@@ -137,7 +167,7 @@ async function getAttendanceDatesForUser(userId, fromISO, toISO) {
   return new Set(
     r.rows.map((row) => {
       const d = new Date(row.work_date);
-      return toLocalISODate(d);
+      return getSystemDateISO(d);
     })
   );
 }
@@ -153,8 +183,8 @@ async function getLiveAbsentDaysForUser(userId, weekStart, effectiveEnd) {
   const graceAfter = Number(shiftMeta.grace_after_minutes ?? 15);
   const now = new Date();
 
-  const weekStartISO = toLocalISODate(weekStart);
-  const effectiveEndISO = toLocalISODate(effectiveEnd);
+  const weekStartISO = getSystemDateISO(weekStart);
+  const effectiveEndISO = getSystemDateISO(effectiveEnd);
 
   const attendanceDates = await getAttendanceDatesForUser(
     userId,
@@ -163,8 +193,8 @@ async function getLiveAbsentDaysForUser(userId, weekStart, effectiveEnd) {
   );
 
   let absentDays = 0;
-  let cursor = startOfDay(weekStart);
-  const end = startOfDay(effectiveEnd);
+  let cursor = startOfSystemDay(weekStart);
+  const end = startOfSystemDay(effectiveEnd);
 
   while (cursor.getTime() <= end.getTime()) {
     const policy = resolvePolicyForAnchorDate(cursor, shiftKind);
@@ -172,7 +202,7 @@ async function getLiveAbsentDaysForUser(userId, weekStart, effectiveEnd) {
       policy.scheduledStart.getTime() + graceAfter * 60 * 1000
     );
 
-    const anchorISO = toLocalISODate(cursor);
+    const anchorISO = getSystemDateISO(cursor);
 
     if (now.getTime() > latestAllowed.getTime()) {
       if (!attendanceDates.has(anchorISO)) {
@@ -180,7 +210,7 @@ async function getLiveAbsentDaysForUser(userId, weekStart, effectiveEnd) {
       }
     }
 
-    cursor = addDays(cursor, 1);
+    cursor = addSystemDays(cursor, 1);
   }
 
   return absentDays;
@@ -219,47 +249,8 @@ async function getLiveAbsentDaysForAllUsers(weekStart, effectiveEnd) {
 
 router.get("/me/today", requireAuth, async (req, res, next) => {
   try {
-    const r = await pool.query(
-      `SELECT
-          a.id,
-          a.user_id,
-          a.shift_id,
-          a.clock_in,
-          a.clock_out,
-          a.total_hours,
-          a.paid_hours,
-          a.status,
-          a.scheduled_start,
-          a.scheduled_end,
-          a.created_at,
-          COALESCE(
-            ROUND(
-              SUM(
-                EXTRACT(
-                  EPOCH FROM (
-                    COALESCE(b.break_end, NOW()) - b.break_start
-                  )
-                )
-              ) / 60.0,
-              2
-            ),
-            0
-          ) AS break_minutes
-       FROM attendance a
-       LEFT JOIN breaks b
-         ON b.attendance_id = a.id
-        AND b.break_start IS NOT NULL
-       WHERE a.user_id = $1
-         AND (
-           a.created_at::date = CURRENT_DATE
-           OR a.scheduled_start::date = CURRENT_DATE
-         )
-       GROUP BY a.id
-       ORDER BY a.id DESC`,
-      [req.user.id]
-    );
-
-    res.json({ today: r.rows });
+    const today = await getTodayAttendanceForUser(req.user.id);
+    res.json({ today });
   } catch (e) {
     next(e);
   }
@@ -267,13 +258,14 @@ router.get("/me/today", requireAuth, async (req, res, next) => {
 
 router.get("/me/weekly", requireAuth, async (req, res, next) => {
   try {
-    const today = new Date();
-    const { weekStart, weekEnd } = payrollWindowByFriday(today);
-    const effectiveEnd = minDate(today, weekEnd);
+    const now = new Date();
+    const { weekStart, weekEnd, effectiveEnd } = getCurrentSaturdayFridayWindow(
+      now
+    );
 
-    const weekStartISO = toLocalISODate(weekStart);
-    const effectiveEndISO = toLocalISODate(effectiveEnd);
-    const weekEndISO = toLocalISODate(weekEnd);
+    const weekStartISO = getSystemDateISO(weekStart);
+    const effectiveEndISO = getSystemDateISO(minDate(effectiveEnd, now));
+    const weekEndISO = getSystemDateISO(weekEnd);
 
     const summaryQuery = await pool.query(
       `WITH att_base AS (
@@ -293,11 +285,12 @@ router.get("/me/weekly", requireAuth, async (req, res, next) => {
            COALESCE(
              (
                SELECT SUM(
-                 EXTRACT(EPOCH FROM (COALESCE(b.break_end, NOW()) - b.break_start))
+                 EXTRACT(EPOCH FROM (b.break_end - b.break_start))
                )
                FROM breaks b
                WHERE b.attendance_id = a.id
                  AND b.break_start IS NOT NULL
+                 AND b.break_end IS NOT NULL
              ),
              0
            ) AS break_seconds
@@ -307,41 +300,18 @@ router.get("/me/weekly", requireAuth, async (req, res, next) => {
          LEFT JOIN payroll p
            ON p.attendance_id = a.id
          WHERE a.user_id = $1
+           AND a.status = ANY($4::text[])
            AND a.scheduled_start IS NOT NULL
            AND a.scheduled_start::date BETWEEN $2::date AND $3::date
        )
        SELECT
-         COUNT(*) FILTER (WHERE status = ANY($4::text[])) AS shifts_count,
-         ROUND(
-           COALESCE(
-             SUM(total_hours) FILTER (WHERE status = ANY($4::text[])),
-             0
-           )::numeric,
-           2
-         ) AS worked_net_hours,
-         ROUND(
-           COALESCE(
-             SUM(paid_hours) FILTER (WHERE status = ANY($4::text[])),
-             0
-           )::numeric,
-           2
-         ) AS paid_hours,
-         ROUND(
-           COALESCE(
-             SUM(break_seconds) FILTER (WHERE status = ANY($4::text[])) / 60.0,
-             0
-           )::numeric,
-           2
-         ) AS break_minutes,
-         ROUND(
-           COALESCE(
-             SUM(total_pay) FILTER (WHERE status = ANY($4::text[])),
-             0
-           )::numeric,
-           2
-         ) AS total_pay
+         COUNT(*) AS shifts_count,
+         ROUND(COALESCE(SUM(total_hours), 0)::numeric, 2) AS worked_net_hours,
+         ROUND(COALESCE(SUM(paid_hours), 0)::numeric, 2) AS paid_hours,
+         ROUND(COALESCE(SUM(break_seconds) / 60.0, 0)::numeric, 2) AS break_minutes,
+         ROUND(COALESCE(SUM(total_pay), 0)::numeric, 2) AS total_pay
        FROM att_base`,
-      [req.user.id, weekStartISO, effectiveEndISO, WEEKLY_INCLUDED_STATUSES]
+      [req.user.id, weekStartISO, effectiveEndISO, FINALIZED_ATTENDANCE_STATUSES]
     );
 
     const attendance = await pool.query(
@@ -358,11 +328,7 @@ router.get("/me/weekly", requireAuth, async (req, res, next) => {
           COALESCE(
             ROUND(
               SUM(
-                EXTRACT(
-                  EPOCH FROM (
-                    COALESCE(b.break_end, NOW()) - b.break_start
-                  )
-                )
+                EXTRACT(EPOCH FROM (b.break_end - b.break_start))
               ) / 60.0,
               2
             ),
@@ -372,12 +338,14 @@ router.get("/me/weekly", requireAuth, async (req, res, next) => {
        LEFT JOIN breaks b
          ON b.attendance_id = a.id
         AND b.break_start IS NOT NULL
+        AND b.break_end IS NOT NULL
        WHERE a.user_id = $1
+         AND a.status = ANY($4::text[])
          AND a.scheduled_start IS NOT NULL
          AND a.scheduled_start::date BETWEEN $2::date AND $3::date
        GROUP BY a.id
        ORDER BY a.id DESC`,
-      [req.user.id, weekStartISO, effectiveEndISO]
+      [req.user.id, weekStartISO, effectiveEndISO, FINALIZED_ATTENDANCE_STATUSES]
     );
 
     const absentDays = await getLiveAbsentDaysForUser(
@@ -415,9 +383,11 @@ router.get(
   async (req, res, next) => {
     try {
       const liveAbsentToday = await getLiveAbsentDaysForAllUsers(
-        startOfDay(new Date()),
-        startOfDay(new Date())
+        startOfSystemDay(new Date()),
+        startOfSystemDay(new Date())
       );
+
+      const todayISO = getSystemDateISO(new Date());
 
       const overview = await pool.query(
         `WITH staff AS (
@@ -434,13 +404,16 @@ router.get(
                WHERE late_minutes > 0
              )::int AS late_today
            FROM attendance
-           WHERE scheduled_start IS NOT NULL
-             AND scheduled_start::date = CURRENT_DATE
+           WHERE (
+             scheduled_start::date = $1::date
+             OR scheduled_end::date = $1::date
+           )
          )
          SELECT
            (SELECT total_staff FROM staff) AS total_staff,
            COALESCE((SELECT present_today FROM today_att), 0) AS present,
-           COALESCE((SELECT late_today FROM today_att), 0) AS late`
+           COALESCE((SELECT late_today FROM today_att), 0) AS late`,
+        [todayISO]
       );
 
       const row = overview.rows[0] || {
@@ -474,13 +447,14 @@ router.get(
   requireRole("ADMIN"),
   async (req, res, next) => {
     try {
-      const today = new Date();
-      const { weekStart, weekEnd } = payrollWindowByFriday(today);
-      const effectiveEnd = minDate(today, weekEnd);
+      const now = new Date();
+      const { weekStart, weekEnd, effectiveEnd } = getCurrentSaturdayFridayWindow(
+        now
+      );
 
-      const weekStartISO = toLocalISODate(weekStart);
-      const effectiveEndISO = toLocalISODate(effectiveEnd);
-      const weekEndISO = toLocalISODate(weekEnd);
+      const weekStartISO = getSystemDateISO(weekStart);
+      const effectiveEndISO = getSystemDateISO(minDate(effectiveEnd, now));
+      const weekEndISO = getSystemDateISO(weekEnd);
 
       const summary = await pool.query(
         `WITH att_base AS (
@@ -489,8 +463,6 @@ router.get(
              a.user_id,
              a.status,
              a.scheduled_start,
-             a.clock_in,
-             a.clock_out,
              a.total_hours,
              a.paid_hours,
              a.late_minutes,
@@ -503,37 +475,17 @@ router.get(
              ON u.id = a.user_id
            LEFT JOIN payroll p
              ON p.attendance_id = a.id
-           WHERE a.scheduled_start IS NOT NULL
+           WHERE a.status = ANY($3::text[])
+             AND a.scheduled_start IS NOT NULL
              AND a.scheduled_start::date BETWEEN $1::date AND $2::date
          )
          SELECT
-           ROUND(
-             COALESCE(
-               SUM(total_hours) FILTER (WHERE status = ANY($3::text[])),
-               0
-             )::numeric,
-             2
-           ) AS worked_hours,
-           ROUND(
-             COALESCE(
-               SUM(paid_hours) FILTER (WHERE status = ANY($3::text[])),
-               0
-             )::numeric,
-             2
-           ) AS paid_hours,
-           COUNT(*) FILTER (
-             WHERE late_minutes > 0
-               AND status = ANY($3::text[])
-           ) AS late_count,
-           ROUND(
-             COALESCE(
-               SUM(total_pay) FILTER (WHERE status = ANY($3::text[])),
-               0
-             )::numeric,
-             2
-           ) AS total_pay
+           ROUND(COALESCE(SUM(total_hours), 0)::numeric, 2) AS worked_hours,
+           ROUND(COALESCE(SUM(paid_hours), 0)::numeric, 2) AS paid_hours,
+           COUNT(*) FILTER (WHERE late_minutes > 0) AS late_count,
+           ROUND(COALESCE(SUM(total_pay), 0)::numeric, 2) AS total_pay
          FROM att_base`,
-        [weekStartISO, effectiveEndISO, WEEKLY_INCLUDED_STATUSES]
+        [weekStartISO, effectiveEndISO, FINALIZED_ATTENDANCE_STATUSES]
       );
 
       const liveAbsentDays = await getLiveAbsentDaysForAllUsers(

@@ -104,7 +104,7 @@ export default function BreaksPage() {
         setBreakStartISO(b.break_start);
       }
 
-      showToast("Break started");
+      showToast(res?.message || "Break started");
       window.dispatchEvent(new Event("break:changed"));
       window.dispatchEvent(new Event("attendance:changed"));
       window.dispatchEvent(new Event("payroll:changed"));
@@ -120,9 +120,9 @@ export default function BreaksPage() {
 
     setBusy(true);
     try {
-      await breaksApi.end({});
+      const res = await breaksApi.end({});
       setBreakStartISO(null);
-      showToast("Break ended");
+      showToast(res?.message || "Break ended");
       window.dispatchEvent(new Event("break:changed"));
       window.dispatchEvent(new Event("attendance:changed"));
       window.dispatchEvent(new Event("payroll:changed"));

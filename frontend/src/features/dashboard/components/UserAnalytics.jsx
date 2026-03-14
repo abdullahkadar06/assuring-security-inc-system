@@ -3,7 +3,7 @@ import {
   PieChart,
   Pie,
   Cell,
-  Tooltip
+  Tooltip,
 } from "recharts";
 import MiniChartCard from "./MiniChartCard";
 
@@ -19,14 +19,17 @@ export default function UserAnalytics({ today = [], weekly = null }) {
   const summary = weekly?.summary || {};
 
   const absentDays = safeNum(summary.absent_days);
-  const workedHours = safeNum(summary.worked_net_hours);
   const lateToday = safeNum(latest?.late_minutes) > 0 ? 1 : 0;
-  const workedDaysEstimate = Math.max(0, 6 - absentDays - lateToday);
+
+  const workedDaysEstimate = Math.max(
+    0,
+    Number(summary.shifts_count ?? 0)
+  );
 
   const donutData = [
     { name: "Worked Days", value: workedDaysEstimate },
     { name: "Absent", value: absentDays },
-    { name: "Late", value: lateToday }
+    { name: "Late", value: lateToday },
   ].filter((x) => x.value > 0);
 
   return (
@@ -38,7 +41,11 @@ export default function UserAnalytics({ today = [], weekly = null }) {
         <ResponsiveContainer width="100%" height={200}>
           <PieChart>
             <Pie
-              data={donutData.length ? donutData : [{ name: "No Data", value: 1 }]}
+              data={
+                donutData.length
+                  ? donutData
+                  : [{ name: "No Data", value: 1 }]
+              }
               cx="50%"
               cy="50%"
               innerRadius={60}
@@ -46,21 +53,19 @@ export default function UserAnalytics({ today = [], weekly = null }) {
               paddingAngle={4}
               dataKey="value"
             >
-              {(donutData.length ? donutData : [{ name: "No Data", value: 1 }]).map(
-                (_, index) => (
-                  <Cell
-                    key={index}
-                    fill={COLORS[index % COLORS.length]}
-                  />
-                )
-              )}
+              {(donutData.length
+                ? donutData
+                : [{ name: "No Data", value: 1 }]
+              ).map((_, index) => (
+                <Cell key={index} fill={COLORS[index % COLORS.length]} />
+              ))}
             </Pie>
             <Tooltip
               contentStyle={{
                 background: "#0F1A2E",
                 border: "1px solid #1D2A44",
                 borderRadius: 12,
-                color: "#EAF0FF"
+                color: "#EAF0FF",
               }}
             />
           </PieChart>

@@ -5,12 +5,20 @@ import { pool } from "../db/pool.js";
 import { requireAuth } from "../middleware/auth.middleware.js";
 import { requireRole } from "../middleware/requireRole.js";
 import { auditLog } from "../utils/audit.js";
+import { isStandardEmail, normalizeEmail } from "../utils/email.util.js";
 
 const router = Router();
 
+const standardEmailSchema = z
+  .string()
+  .transform((value) => normalizeEmail(value))
+  .refine((value) => isStandardEmail(value), {
+    message: "Valid standard email is required",
+  });
+
 const createUserSchema = z.object({
-  full_name: z.string().min(2, "Full name is required"),
-  email: z.string().email("Valid email is required"),
+  full_name: z.string().trim().min(2, "Full name is required"),
+  email: standardEmailSchema,
   password: z.string().min(6, "Password must be at least 6 characters"),
   phone: z.string().max(50).nullable().optional(),
   address: z.string().max(255).nullable().optional(),
@@ -26,7 +34,7 @@ const updateMeSchema = z.object({
 });
 
 const adminUpdateSchema = z.object({
-  full_name: z.string().min(2).optional(),
+  full_name: z.string().trim().min(2).optional(),
   phone: z.string().max(50).nullable().optional(),
   address: z.string().max(255).nullable().optional(),
   hourly_rate: z.number().nonnegative().optional(),
@@ -102,10 +110,11 @@ router.post("/", requireAuth, requireRole("ADMIN"), async (req, res, next) => {
     }
 
     const data = parsed.data;
+    const normalizedEmail = normalizeEmail(data.email);
 
     const existing = await pool.query(
       `SELECT id FROM users WHERE email = $1 LIMIT 1`,
-      [data.email.trim().toLowerCase()]
+      [normalizedEmail]
     );
 
     if (existing.rowCount > 0) {
@@ -141,14 +150,14 @@ router.post("/", requireAuth, requireRole("ADMIN"), async (req, res, next) => {
       RETURNING id`,
       [
         data.full_name.trim(),
-        data.email.trim().toLowerCase(),
+        normalizedEmail,
         hashedPassword,
         data.role,
         data.hourly_rate,
         data.shift_id ?? null,
         data.is_active,
-        data.phone ?? null,
-        data.address ?? null,
+        data.phone?.trim?.() || null,
+        data.address?.trim?.() || null,
       ]
     );
 
@@ -161,7 +170,7 @@ router.post("/", requireAuth, requireRole("ADMIN"), async (req, res, next) => {
       entity_id: ins.rows[0].id,
       meta: {
         full_name: data.full_name,
-        email: data.email,
+        email: normalizedEmail,
         role: data.role,
         shift_id: data.shift_id ?? null,
       },
@@ -208,7 +217,10 @@ router.put("/me", requireAuth, async (req, res, next) => {
     }
 
     const sets = keys.map((k, i) => `${k} = $${i + 1}`).join(", ");
-    const values = keys.map((k) => fields[k]);
+    const values = keys.map((k) => {
+      const value = fields[k];
+      return typeof value === "string" ? value.trim() : value;
+    });
 
     const upd = await pool.query(
       `UPDATE users
@@ -257,6 +269,15 @@ router.put("/:id", requireAuth, requireRole("ADMIN"), async (req, res, next) => 
       return res.status(400).json({ message: "No fields to update" });
     }
 
+    const currentUser = await pool.query(
+      `SELECT id, shift_id FROM users WHERE id = $1 LIMIT 1`,
+      [id]
+    );
+
+    if (currentUser.rowCount === 0) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
     if (
       "shift_id" in fields &&
       fields.shift_id !== null &&
@@ -272,7 +293,10 @@ router.put("/:id", requireAuth, requireRole("ADMIN"), async (req, res, next) => 
     }
 
     const sets = keys.map((k, i) => `${k} = $${i + 1}`).join(", ");
-    const values = keys.map((k) => fields[k]);
+    const values = keys.map((k) => {
+      const value = fields[k];
+      return typeof value === "string" ? value.trim() : value;
+    });
 
     const upd = await pool.query(
       `UPDATE users
@@ -296,7 +320,10 @@ router.put("/:id", requireAuth, requireRole("ADMIN"), async (req, res, next) => 
       meta: fields,
     });
 
-    res.json({ user: updatedUser });
+    res.json({
+      user: updatedUser,
+      message: "User updated successfully",
+    });
   } catch (e) {
     next(e);
   }

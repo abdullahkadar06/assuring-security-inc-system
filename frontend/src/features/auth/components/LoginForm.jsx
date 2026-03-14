@@ -5,6 +5,7 @@ import Button from "../../../components/ui/Button";
 import { authApi } from "../../../api/auth.api";
 import { useAuthStore } from "../../../state/auth/auth.store";
 import { useUiStore } from "../../../state/ui/ui.store";
+import { isStandardEmail } from "../../../utils/format";
 
 export default function LoginForm() {
   const nav = useNavigate();
@@ -15,11 +16,18 @@ export default function LoginForm() {
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
 
+  const normalizedEmail = email.trim().toLowerCase();
+
   const onSubmit = async (e) => {
     e.preventDefault();
 
-    if (!email.trim()) {
+    if (!normalizedEmail) {
       showToast("Email is required", "error");
+      return;
+    }
+
+    if (!isStandardEmail(normalizedEmail)) {
+      showToast("Enter a valid email address", "error");
       return;
     }
 
@@ -31,7 +39,7 @@ export default function LoginForm() {
     setBusy(true);
     try {
       const data = await authApi.login({
-        email: email.trim(),
+        email: normalizedEmail,
         password,
       });
 
@@ -46,14 +54,17 @@ export default function LoginForm() {
   };
 
   return (
-    <form onSubmit={onSubmit} className="space-y-3">
+    <form onSubmit={onSubmit} className="space-y-3" noValidate>
       <div>
         <div className="mb-1 text-sm text-brand-text/70">Email</div>
         <Input
           type="email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          placeholder="name@email.com"
+          onBlur={() => {
+            if (email !== normalizedEmail) setEmail(normalizedEmail);
+          }}
+          placeholder="name@example.com"
           autoComplete="email"
         />
       </div>

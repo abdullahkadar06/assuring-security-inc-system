@@ -1,7 +1,6 @@
 import {
   DEFAULT_GRACE_AFTER_MINUTES,
   DEFAULT_GRACE_BEFORE_MINUTES,
-  SHIFT_KIND,
   SYSTEM_UTC_OFFSET_MINUTES,
 } from "../constants/attendancePolicy.constants.js";
 
@@ -25,7 +24,6 @@ function getSystemParts(date = new Date()) {
     hour: d.getUTCHours(),
     minute: d.getUTCMinutes(),
     second: d.getUTCSeconds(),
-    weekday: d.getUTCDay(), // 0=Sun ... 6=Sat
   };
 }
 
@@ -53,104 +51,67 @@ function formatSystemDateISO(date) {
   return `${y}-${m}-${d}`;
 }
 
-function shiftKindFromUserShift(userShift) {
-  const code = String(userShift?.code || "").toUpperCase();
-  const name = String(userShift?.name || "").toUpperCase();
+function parseTimeParts(timeText, fallbackHour = 0, fallbackMinute = 0) {
+  const raw = String(timeText || "").trim();
+  const match = raw.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
 
-  if (code.includes("NIGHT") || name.includes("NIGHT")) {
-    return SHIFT_KIND.NIGHT;
+  if (!match) {
+    return {
+      hour: fallbackHour,
+      minute: fallbackMinute,
+      second: 0,
+    };
   }
 
-  return SHIFT_KIND.MORNING;
-}
-
-function buildMorningShift(anchorDate) {
-  const anchor = startOfSystemDay(anchorDate);
-  const parts = getSystemParts(anchor);
-
-  const scheduledStart = buildSystemDate(
-    parts.year,
-    parts.month,
-    parts.day,
-    8,
-    0,
-    0
-  );
-
-  const scheduledEnd = buildSystemDate(
-    parts.year,
-    parts.month,
-    parts.day,
-    16,
-    0,
-    0
-  );
-
   return {
-    shiftKind: SHIFT_KIND.MORNING,
-    shiftCode: "MORNING",
-    shiftName: "Morning Shift",
-    anchorDate: formatSystemDateISO(anchor),
-    scheduledStart,
-    scheduledEnd,
+    hour: Number(match[1]),
+    minute: Number(match[2]),
+    second: Number(match[3] || 0),
   };
 }
 
-function buildNightShift(anchorDate) {
+function buildShiftFromRow(anchorDate, userShift) {
   const anchor = startOfSystemDay(anchorDate);
   const parts = getSystemParts(anchor);
 
-  let startHour = 0;
-  let endHour = 8;
-  let endDayOffset = 0;
-  let shiftCode = "NIGHT";
-  let shiftName = "Night Shift";
-
-  if (parts.weekday === 6) {
-    startHour = 23;
-    endHour = 7;
-    endDayOffset = 1;
-    shiftCode = "SATURDAY_NIGHT";
-    shiftName = "Night Shift";
-  } else if (parts.weekday === 0) {
-    startHour = 23;
-    endHour = 8;
-    endDayOffset = 1;
-    shiftCode = "SUNDAY_NIGHT";
-    shiftName = "Night Shift";
-  } else {
-    startHour = 0;
-    endHour = 8;
-    endDayOffset = 0;
-    shiftCode = "WEEKDAY_NIGHT";
-    shiftName = "Night Shift";
-  }
+  const start = parseTimeParts(userShift?.start_time, 8, 0);
+  const end = parseTimeParts(userShift?.end_time, 16, 0);
 
   const scheduledStart = buildSystemDate(
     parts.year,
     parts.month,
     parts.day,
-    startHour,
-    0,
-    0
+    start.hour,
+    start.minute,
+    start.second
   );
 
-  const endBase = addSystemDays(anchor, endDayOffset);
-  const endParts = getSystemParts(endBase);
-
-  const scheduledEnd = buildSystemDate(
-    endParts.year,
-    endParts.month,
-    endParts.day,
-    endHour,
-    0,
-    0
+  let scheduledEnd = buildSystemDate(
+    parts.year,
+    parts.month,
+    parts.day,
+    end.hour,
+    end.minute,
+    end.second
   );
+
+  if (scheduledEnd.getTime() <= scheduledStart.getTime()) {
+    const nextDay = addSystemDays(anchor, 1);
+    const nextParts = getSystemParts(nextDay);
+
+    scheduledEnd = buildSystemDate(
+      nextParts.year,
+      nextParts.month,
+      nextParts.day,
+      end.hour,
+      end.minute,
+      end.second
+    );
+  }
 
   return {
-    shiftKind: SHIFT_KIND.NIGHT,
-    shiftCode,
-    shiftName,
+    shiftCode: String(userShift?.code || "SHIFT"),
+    shiftName: String(userShift?.name || "Shift"),
     anchorDate: formatSystemDateISO(anchor),
     scheduledStart,
     scheduledEnd,
@@ -166,46 +127,47 @@ function applyGraceWindow(policy, graceBeforeMinutes, graceAfterMinutes) {
     ? Number(graceAfterMinutes)
     : DEFAULT_GRACE_AFTER_MINUTES;
 
-  const earliest = new Date(
+  const earliestClockIn = new Date(
     policy.scheduledStart.getTime() - graceBefore * 60_000
   );
 
-  // clock-in remains valid until shift end
-  // graceAfter is used for late calculation, not for closing the clock-in window
-  const latest = new Date(policy.scheduledEnd.getTime());
+  const latestClockIn = new Date(policy.scheduledEnd.getTime());
+
+  const autoCloseAt = new Date(
+    policy.scheduledEnd.getTime() + graceAfter * 60_000
+  );
 
   return {
     ...policy,
     graceBeforeMinutes: graceBefore,
     graceAfterMinutes: graceAfter,
-    earliestClockIn: earliest,
-    latestClockIn: latest,
+    earliestClockIn,
+    latestClockIn,
+    autoCloseAt,
   };
 }
 
 export function resolveShiftPolicyForClockIn({
   now = new Date(),
-  shiftKind,
+  userShift,
   graceBeforeMinutes = DEFAULT_GRACE_BEFORE_MINUTES,
   graceAfterMinutes = DEFAULT_GRACE_AFTER_MINUTES,
 }) {
   const today = startOfSystemDay(now);
   const yesterday = addSystemDays(today, -1);
 
-  let candidates = [];
+  const candidates = [
+    buildShiftFromRow(yesterday, userShift),
+    buildShiftFromRow(today, userShift),
+  ];
 
-  if (shiftKind === SHIFT_KIND.MORNING) {
-    candidates = [buildMorningShift(today)];
-  } else {
-    candidates = [buildNightShift(yesterday), buildNightShift(today)];
-  }
-
-  const withGrace = candidates.map((c) =>
-    applyGraceWindow(c, graceBeforeMinutes, graceAfterMinutes)
+  const withGrace = candidates.map((candidate) =>
+    applyGraceWindow(candidate, graceBeforeMinutes, graceAfterMinutes)
   );
 
   const matched = withGrace.find(
-    (c) => now >= c.earliestClockIn && now < c.latestClockIn
+    (candidate) =>
+      now >= candidate.earliestClockIn && now < candidate.latestClockIn
   );
 
   if (matched) {
@@ -227,6 +189,32 @@ export function resolveShiftPolicyForClockIn({
   };
 }
 
+export function getAutoCloseTimeForAttendance({
+  scheduledEnd,
+  graceAfterMinutes = DEFAULT_GRACE_AFTER_MINUTES,
+}) {
+  if (!scheduledEnd) return null;
+
+  return new Date(
+    new Date(scheduledEnd).getTime() + Number(graceAfterMinutes || 0) * 60_000
+  );
+}
+
+export function shouldAutoCloseAttendance({
+  scheduledEnd,
+  now = new Date(),
+  graceAfterMinutes = DEFAULT_GRACE_AFTER_MINUTES,
+}) {
+  if (!scheduledEnd) return false;
+
+  const autoCloseAt = getAutoCloseTimeForAttendance({
+    scheduledEnd,
+    graceAfterMinutes,
+  });
+
+  return Boolean(autoCloseAt && now.getTime() >= autoCloseAt.getTime());
+}
+
 export function calculateLateMinutes({
   actualClockIn,
   scheduledStart,
@@ -240,10 +228,6 @@ export function calculateLateMinutes({
   if (diffMinutes <= graceAfterMinutes) return diffMinutes;
 
   return graceAfterMinutes;
-}
-
-export function getShiftKindForUser(userShift) {
-  return shiftKindFromUserShift(userShift);
 }
 
 export function getSystemDateISO(date = new Date()) {

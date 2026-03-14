@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Loader from "../../../components/ui/Loader";
 import Card from "../../../components/ui/Card";
 import StatCard from "../components/StatCard";
@@ -8,7 +8,11 @@ import { useRole } from "../../../hooks/useRole";
 import { useAuth } from "../../../hooks/useAuth";
 import CompactAnalytics from "../components/CompactAnalytics";
 import { formatUserShift } from "../../../utils/shiftFormatter";
-import { formatBreakMinutesPrecise } from "../../../utils/format";
+import {
+  formatBreakMinutesPrecise,
+  formatHours,
+  formatMoney,
+} from "../../../utils/format";
 import {
   Activity,
   Wallet,
@@ -21,16 +25,12 @@ import {
   Coffee,
 } from "lucide-react";
 
-function formatHours(value) {
-  return `${Number(value ?? 0).toFixed(2)}h`;
-}
-
 function formatDays(value) {
   return `${Number(value ?? 0)}d`;
 }
 
-function formatMoney(value) {
-  return `$${Number(value ?? 0).toFixed(2)}`;
+function getLatestAttendance(rows = []) {
+  return rows?.[0] || null;
 }
 
 export default function DashboardPage() {
@@ -96,11 +96,7 @@ export default function DashboardPage() {
     };
   }, [loadDashboardData]);
 
-  if (busy) {
-    return <Loader label="Loading dashboard..." />;
-  }
-
-  const latest = today?.[0] || null;
+  const latest = useMemo(() => getLatestAttendance(today), [today]);
   const shiftText = formatUserShift(user, new Date());
 
   const currentStatus =
@@ -108,6 +104,10 @@ export default function DashboardPage() {
 
   const paidHours = Number(latest?.paid_hours ?? 0);
   const breakTodayMinutes = Number(latest?.break_minutes ?? 0);
+
+  if (busy) {
+    return <Loader label="Loading dashboard..." />;
+  }
 
   return (
     <div className="space-y-4">
@@ -139,7 +139,7 @@ export default function DashboardPage() {
 
         <StatCard
           title="Paid hours"
-          value={formatHours(paidHours)}
+          value={`${formatHours(paidHours)}h`}
           icon={<Wallet size={20} />}
         />
 
@@ -162,7 +162,7 @@ export default function DashboardPage() {
           <div className="flex items-center gap-2">
             <BadgeDollarSign size={16} className="text-emerald-400" />
             <span>
-              Paid: <b>{formatHours(weekly?.summary?.paid_hours ?? 0)}</b>
+              Paid: <b>{formatHours(weekly?.summary?.paid_hours ?? 0)}h</b>
             </span>
           </div>
 
@@ -176,7 +176,7 @@ export default function DashboardPage() {
           <div className="flex items-center gap-2">
             <BriefcaseBusiness size={16} className="text-amber-300" />
             <span>
-              Worked: <b>{formatHours(weekly?.summary?.worked_net_hours ?? 0)}</b>
+              Worked: <b>{formatHours(weekly?.summary?.worked_net_hours ?? 0)}h</b>
             </span>
           </div>
 

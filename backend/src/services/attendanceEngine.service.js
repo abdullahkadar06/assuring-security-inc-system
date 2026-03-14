@@ -3,14 +3,50 @@ import { auditLog } from "../utils/audit.js";
 import {
   ATTENDANCE_STATUS,
   CLOSE_REASON,
+  DEFAULT_GRACE_AFTER_MINUTES,
+  FINALIZED_ATTENDANCE_STATUSES,
   MAX_SHIFT_HOURS,
-  MAX_SHIFT_MINUTES,
+  PAID_BREAK_LIMIT_SECONDS,
+  SYSTEM_UTC_OFFSET_MINUTES,
 } from "../constants/attendancePolicy.constants.js";
 import {
   calculateLateMinutes,
-  getShiftKindForUser,
   resolveShiftPolicyForClockIn,
 } from "../utils/shiftPolicy.util.js";
+
+const OFFSET_MS = SYSTEM_UTC_OFFSET_MINUTES * 60 * 1000;
+
+function toSystemPseudo(date) {
+  return new Date(date.getTime() + OFFSET_MS);
+}
+
+function fromSystemPseudo(date) {
+  return new Date(date.getTime() - OFFSET_MS);
+}
+
+function getSystemParts(date = new Date()) {
+  const d = toSystemPseudo(date);
+
+  return {
+    year: d.getUTCFullYear(),
+    month: d.getUTCMonth() + 1,
+    day: d.getUTCDate(),
+  };
+}
+
+function buildSystemDate(year, month, day, hour = 0, minute = 0, second = 0) {
+  const pseudo = new Date(Date.UTC(year, month - 1, day, hour, minute, second));
+  return fromSystemPseudo(pseudo);
+}
+
+function getSystemDayBounds(date = new Date()) {
+  const p = getSystemParts(date);
+
+  const start = buildSystemDate(p.year, p.month, p.day, 0, 0, 0);
+  const end = buildSystemDate(p.year, p.month, p.day, 23, 59, 59);
+
+  return { start, end };
+}
 
 async function getUserShift(client, userId) {
   const r = await client.query(
@@ -48,14 +84,16 @@ async function getOpenAttendance(client, userId) {
         a.status,
         a.scheduled_start,
         a.scheduled_end,
-        COALESCE(u.hourly_rate, 0) AS hourly_rate
+        COALESCE(u.hourly_rate, 0) AS hourly_rate,
+        COALESCE(s.grace_after_minutes, $3) AS grace_after_minutes
      FROM attendance a
      JOIN users u ON u.id = a.user_id
+     LEFT JOIN shifts s ON s.id = a.shift_id
      WHERE a.user_id = $1
        AND a.status = $2
      ORDER BY a.id DESC
      LIMIT 1`,
-    [userId, ATTENDANCE_STATUS.OPEN]
+    [userId, ATTENDANCE_STATUS.OPEN, DEFAULT_GRACE_AFTER_MINUTES]
   );
 
   return r.rowCount ? r.rows[0] : null;
@@ -65,13 +103,82 @@ function roundHours(value) {
   return Number(Number(value || 0).toFixed(2));
 }
 
-async function closeAnyOpenBreaks(client, attendanceId) {
+function safeDate(value) {
+  if (!value) return null;
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function resolveAutoClockOutTime(attendance, forcedClockOutAt = null) {
+  const scheduledEnd = safeDate(attendance?.scheduled_end);
+  const forced = safeDate(forcedClockOutAt);
+
+  if (scheduledEnd && forced) {
+    return forced.getTime() <= scheduledEnd.getTime() ? forced : scheduledEnd;
+  }
+
+  if (scheduledEnd) return scheduledEnd;
+  if (forced) return forced;
+
+  return new Date();
+}
+
+export function calculateAttendanceMetrics({
+  clockIn,
+  clockOut,
+  breakSeconds = 0,
+  paidBreakLimitSeconds = PAID_BREAK_LIMIT_SECONDS,
+  maxPaidShiftHours = MAX_SHIFT_HOURS,
+}) {
+  const inAt = safeDate(clockIn);
+  const outAt = safeDate(clockOut);
+
+  if (!inAt || !outAt) {
+    return {
+      rawSeconds: 0,
+      breakSeconds: 0,
+      unpaidBreakSeconds: 0,
+      workedSeconds: 0,
+      paidSeconds: 0,
+      totalHours: 0,
+      paidHours: 0,
+    };
+  }
+
+  const rawSeconds = Math.max(
+    0,
+    Math.floor((outAt.getTime() - inAt.getTime()) / 1000)
+  );
+
+  const normalizedBreakSeconds = Math.max(0, Number(breakSeconds || 0));
+  const unpaidBreakSeconds = Math.max(
+    0,
+    normalizedBreakSeconds - paidBreakLimitSeconds
+  );
+
+  const workedSeconds = Math.max(0, rawSeconds - normalizedBreakSeconds);
+  const paidSeconds = Math.max(0, rawSeconds - unpaidBreakSeconds);
+
+  return {
+    rawSeconds,
+    breakSeconds: normalizedBreakSeconds,
+    unpaidBreakSeconds,
+    workedSeconds,
+    paidSeconds,
+    totalHours: roundHours(workedSeconds / 3600),
+    paidHours: roundHours(Math.min(maxPaidShiftHours, paidSeconds / 3600)),
+  };
+}
+
+async function closeAnyOpenBreaks(client, attendanceId, closedAt = null) {
+  const resolvedClosedAt = safeDate(closedAt) || new Date();
+
   await client.query(
     `UPDATE breaks
-     SET break_end = NOW()
+     SET break_end = $2
      WHERE attendance_id = $1
        AND break_end IS NULL`,
-    [attendanceId]
+    [attendanceId, resolvedClosedAt]
   );
 }
 
@@ -95,7 +202,9 @@ async function upsertPayroll(
   client,
   { userId, attendanceId, paidHours, hourlyRate }
 ) {
-  const totalPay = roundHours(Number(paidHours) * Number(hourlyRate || 0));
+  const safeRate = Number(hourlyRate || 0);
+  const safePaidHours = Number(paidHours || 0);
+  const totalPay = Number((safePaidHours * safeRate).toFixed(2));
 
   await client.query(
     `INSERT INTO payroll (
@@ -114,15 +223,15 @@ async function upsertPayroll(
        overtime_hours = EXCLUDED.overtime_hours,
        hourly_rate = EXCLUDED.hourly_rate,
        total_pay = EXCLUDED.total_pay`,
-    [userId, attendanceId, paidHours, 0, Number(hourlyRate || 0), totalPay]
+    [userId, attendanceId, safePaidHours, 0, safeRate, totalPay]
   );
 
   return {
     attendance_id: attendanceId,
     total_pay: totalPay,
-    regular_hours: paidHours,
+    regular_hours: safePaidHours,
     overtime_hours: 0,
-    hourly_rate: Number(hourlyRate || 0),
+    hourly_rate: safeRate,
   };
 }
 
@@ -164,7 +273,7 @@ export async function clockInUser({ userId, actorUserId }) {
 
     const policy = resolveShiftPolicyForClockIn({
       now,
-      shiftKind: getShiftKindForUser(us),
+      userShift: us,
       graceBeforeMinutes: us.grace_before_minutes,
       graceAfterMinutes: us.grace_after_minutes,
     });
@@ -181,6 +290,7 @@ export async function clockInUser({ userId, actorUserId }) {
           },
           scheduled_start: policy.scheduledStart,
           scheduled_end: policy.scheduledEnd,
+          auto_close_at: policy.autoCloseAt,
         },
       };
     }
@@ -247,6 +357,7 @@ export async function clockInUser({ userId, actorUserId }) {
         scheduled_end: policy.scheduledEnd,
         late_minutes: lateMinutes,
         shift_code: policy.shiftCode,
+        auto_close_at: policy.autoCloseAt,
       },
     });
 
@@ -262,6 +373,7 @@ export async function clockInUser({ userId, actorUserId }) {
           scheduled_end: policy.scheduledEnd,
           earliest_clock_in: policy.earliestClockIn,
           latest_clock_in: policy.latestClockIn,
+          auto_close_at: policy.autoCloseAt,
         },
       },
     };
@@ -275,7 +387,12 @@ export async function clockInUser({ userId, actorUserId }) {
   }
 }
 
-export async function clockOutUser({ userId, actorUserId, isAuto = false }) {
+export async function clockOutUser({
+  userId,
+  actorUserId,
+  isAuto = false,
+  forcedClockOutAt = null,
+}) {
   const client = await pool.connect();
 
   try {
@@ -294,23 +411,21 @@ export async function clockOutUser({ userId, actorUserId, isAuto = false }) {
 
     const attendanceId = attendance.id;
 
-    await closeAnyOpenBreaks(client, attendanceId);
+    const clockOut = isAuto
+      ? resolveAutoClockOutTime(attendance, forcedClockOutAt)
+      : new Date();
+
+    await closeAnyOpenBreaks(client, attendanceId, clockOut);
 
     const breakSeconds = await getBreakSeconds(client, attendanceId);
 
-    const clockIn = new Date(attendance.clock_in);
-    const clockOut = isAuto
-      ? new Date(clockIn.getTime() + MAX_SHIFT_MINUTES * 60_000)
-      : new Date();
-
-    const rawSeconds = Math.max(
-      0,
-      Math.floor((clockOut.getTime() - clockIn.getTime()) / 1000)
-    );
-
-    const workedSeconds = Math.max(0, rawSeconds - breakSeconds);
-    const totalHours = roundHours(workedSeconds / 3600);
-    const paidHours = roundHours(Math.min(MAX_SHIFT_HOURS, totalHours));
+    const metrics = calculateAttendanceMetrics({
+      clockIn: attendance.clock_in,
+      clockOut,
+      breakSeconds,
+      paidBreakLimitSeconds: PAID_BREAK_LIMIT_SECONDS,
+      maxPaidShiftHours: MAX_SHIFT_HOURS,
+    });
 
     const newStatus = isAuto
       ? ATTENDANCE_STATUS.AUTO_CLOSED
@@ -329,8 +444,8 @@ export async function clockOutUser({ userId, actorUserId, isAuto = false }) {
         attendanceId,
         clockOut,
         newStatus,
-        totalHours,
-        paidHours,
+        metrics.totalHours,
+        metrics.paidHours,
         ATTENDANCE_STATUS.OPEN,
       ]
     );
@@ -346,7 +461,7 @@ export async function clockOutUser({ userId, actorUserId, isAuto = false }) {
     const payroll = await upsertPayroll(client, {
       userId: attendance.user_id,
       attendanceId,
-      paidHours,
+      paidHours: metrics.paidHours,
       hourlyRate: attendance.hourly_rate,
     });
 
@@ -361,10 +476,13 @@ export async function clockOutUser({ userId, actorUserId, isAuto = false }) {
         close_reason: isAuto
           ? CLOSE_REASON.AUTO_SHIFT_CLOSE
           : CLOSE_REASON.MANUAL,
-        total_hours: totalHours,
-        paid_hours: paidHours,
-        break_seconds: breakSeconds,
+        total_hours: metrics.totalHours,
+        paid_hours: metrics.paidHours,
+        break_seconds: metrics.breakSeconds,
+        unpaid_break_seconds: metrics.unpaidBreakSeconds,
+        paid_break_limit_seconds: PAID_BREAK_LIMIT_SECONDS,
         total_pay: payroll.total_pay,
+        closed_at: clockOut,
       },
     });
 
@@ -387,52 +505,156 @@ export async function clockOutUser({ userId, actorUserId, isAuto = false }) {
 }
 
 export async function getTodayAttendanceForUser(userId) {
-  const now = new Date();
-  const start = new Date(now);
-  start.setHours(0, 0, 0, 0);
-
-  const end = new Date(now);
-  end.setHours(23, 59, 59, 999);
+  const { start, end } = getSystemDayBounds(new Date());
 
   const result = await pool.query(
-    `SELECT
-        a.*,
-        COALESCE(
-          ROUND(
-            SUM(
-              EXTRACT(EPOCH FROM (COALESCE(b.break_end, NOW()) - b.break_start))
-            ) / 60.0,
-            2
-          ),
-          0
-        ) AS break_minutes
-     FROM attendance a
-     LEFT JOIN breaks b
-       ON b.attendance_id = a.id
-      AND b.break_start IS NOT NULL
-     WHERE a.user_id = $1
-       AND (
-         (a.scheduled_start IS NOT NULL AND a.scheduled_start BETWEEN $2 AND $3)
-         OR
-         (a.created_at BETWEEN $2 AND $3)
-       )
-     GROUP BY a.id
-     ORDER BY a.id DESC`,
-    [userId, start, end]
+    `WITH base AS (
+       SELECT
+         a.*,
+         CASE
+           WHEN a.status IN ('CLOSED', 'AUTO_CLOSED') AND a.clock_out IS NOT NULL
+             THEN a.clock_out
+           WHEN a.status = 'OPEN' AND a.scheduled_end IS NOT NULL
+             THEN LEAST(NOW(), a.scheduled_end)
+           WHEN a.status = 'OPEN'
+             THEN NOW()
+           ELSE a.clock_out
+         END AS effective_clock_out
+       FROM attendance a
+       WHERE a.user_id = $1
+         AND (
+           (a.scheduled_start IS NOT NULL AND a.scheduled_start BETWEEN $2 AND $3)
+           OR
+           (a.created_at BETWEEN $2 AND $3)
+           OR
+           (a.clock_in BETWEEN $2 AND $3)
+         )
+     )
+     SELECT
+       b.*,
+       COALESCE(
+         ROUND(
+           (
+             GREATEST(
+               0,
+               EXTRACT(EPOCH FROM (COALESCE(b.effective_clock_out, b.clock_in) - b.clock_in))
+               - COALESCE((
+                   SELECT SUM(
+                     GREATEST(
+                       0,
+                       EXTRACT(
+                         EPOCH FROM (
+                           LEAST(COALESCE(br.break_end, b.effective_clock_out), b.effective_clock_out) - br.break_start
+                         )
+                       )
+                     )
+                   )
+                   FROM breaks br
+                   WHERE br.attendance_id = b.id
+                     AND br.break_start IS NOT NULL
+                     AND br.break_start < COALESCE(b.effective_clock_out, NOW())
+                 ), 0)
+             ) / 3600.0
+           )::numeric,
+           2
+         ),
+         0
+       ) AS total_hours_live,
+       COALESCE(
+         ROUND(
+           LEAST(
+             $4::numeric,
+             (
+               GREATEST(
+                 0,
+                 EXTRACT(EPOCH FROM (COALESCE(b.effective_clock_out, b.clock_in) - b.clock_in))
+                 - GREATEST(
+                     0,
+                     COALESCE((
+                       SELECT SUM(
+                         GREATEST(
+                           0,
+                           EXTRACT(
+                             EPOCH FROM (
+                               LEAST(COALESCE(br.break_end, b.effective_clock_out), b.effective_clock_out) - br.break_start
+                             )
+                           )
+                         )
+                       )
+                       FROM breaks br
+                       WHERE br.attendance_id = b.id
+                         AND br.break_start IS NOT NULL
+                         AND br.break_start < COALESCE(b.effective_clock_out, NOW())
+                     ), 0) - $5
+                   )
+               ) / 3600.0
+             )
+           )::numeric,
+           2
+         ),
+         0
+       ) AS paid_hours_live,
+       COALESCE(
+         ROUND(
+           COALESCE((
+             SELECT SUM(
+               GREATEST(
+                 0,
+                 EXTRACT(
+                   EPOCH FROM (
+                     LEAST(COALESCE(br.break_end, b.effective_clock_out), b.effective_clock_out) - br.break_start
+                   )
+                 )
+               )
+             )
+             FROM breaks br
+             WHERE br.attendance_id = b.id
+               AND br.break_start IS NOT NULL
+               AND br.break_start < COALESCE(b.effective_clock_out, NOW())
+           ), 0) / 60.0,
+           2
+         ),
+         0
+       ) AS break_minutes
+     FROM base b
+     ORDER BY b.id DESC`,
+    [userId, start, end, MAX_SHIFT_HOURS, PAID_BREAK_LIMIT_SECONDS]
   );
 
-  return result.rows;
+  return result.rows.map((row) => ({
+    ...row,
+    total_hours: FINALIZED_ATTENDANCE_STATUSES.includes(row.status)
+      ? Number(row.total_hours ?? 0)
+      : Number(row.total_hours_live ?? 0),
+    paid_hours: FINALIZED_ATTENDANCE_STATUSES.includes(row.status)
+      ? Number(row.paid_hours ?? 0)
+      : Number(row.paid_hours_live ?? 0),
+    break_minutes: Number(row.break_minutes ?? 0),
+  }));
 }
 
 export async function autoCloseDueAttendances() {
   const due = await pool.query(
-    `SELECT a.user_id
+    `SELECT
+        a.user_id,
+        a.id AS attendance_id,
+        a.scheduled_end,
+        COALESCE(s.grace_after_minutes, $2) AS grace_after_minutes
      FROM attendance a
+     LEFT JOIN shifts s ON s.id = a.shift_id
      WHERE a.status = $1
-       AND a.clock_in <= NOW() - INTERVAL '8 hours'
+       AND a.scheduled_end IS NOT NULL
+       AND NOW() >= (
+         a.scheduled_end
+         + (COALESCE(s.grace_after_minutes, $2) * INTERVAL '1 minute')
+       )
      ORDER BY a.id ASC`,
-    [ATTENDANCE_STATUS.OPEN]
+    [ATTENDANCE_STATUS.OPEN, DEFAULT_GRACE_AFTER_MINUTES]
   );
+
+  if (due.rows.length > 0) {
+    console.log("AUTO CLOSE DUE COUNT:", due.rows.length);
+  }
 
   for (const row of due.rows) {
     try {
@@ -440,9 +662,16 @@ export async function autoCloseDueAttendances() {
         userId: row.user_id,
         actorUserId: row.user_id,
         isAuto: true,
+        forcedClockOutAt: row.scheduled_end,
       });
+
+      console.log("AUTO CLOSED:", row.attendance_id);
     } catch (e) {
-      console.error("AUTO CLOSE FAILED:", e);
+      console.error("AUTO CLOSE FAILED:", {
+        attendanceId: row.attendance_id,
+        userId: row.user_id,
+        error: e?.message || e,
+      });
     }
   }
 }

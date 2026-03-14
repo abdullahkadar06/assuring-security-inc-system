@@ -72,12 +72,12 @@ export default function AssignShiftModal({
     try {
       setBusy(true);
 
-      await shiftsApi.assign({
+      const res = await shiftsApi.assign({
         user_id: selectedUser.id,
         shift_id: Number(shiftId),
       });
 
-      showToast("Shift assigned successfully", "success");
+      showToast(res?.message || "Shift assigned successfully", "success");
 
       if (onAssigned) {
         await onAssigned();

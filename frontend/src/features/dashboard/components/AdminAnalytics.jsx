@@ -10,44 +10,40 @@ import {
   YAxis,
   CartesianGrid,
   LineChart,
-  Line
+  Line,
 } from "recharts";
 import MiniChartCard from "./MiniChartCard";
 
 const COLORS = ["#0B3D91", "#D32F2F", "#7DD3FC", "#60A5FA"];
 
-const FALLBACK_OVERVIEW = {
-  total_staff: 24,
-  present: 17,
-  absent: 4,
-  late: 3,
-  payroll_total: 12840
-};
-
-const FALLBACK_WEEKLY = {
-  weekly_activity: [
-    { day: "Sat", value: 14 },
-    { day: "Sun", value: 16 },
-    { day: "Mon", value: 18 },
-    { day: "Tue", value: 15 },
-    { day: "Wed", value: 20 },
-    { day: "Thu", value: 19 },
-    { day: "Fri", value: 13 }
-  ],
-  trend: [
-    { label: "W1", value: 61 },
-    { label: "W2", value: 66 },
-    { label: "W3", value: 72 },
-    { label: "W4", value: 68 }
-  ]
-};
-
 function safeOverview(data) {
-  return data || FALLBACK_OVERVIEW;
+  return {
+    total_staff: Number(data?.summary?.total_staff ?? 0),
+    present: Number(data?.summary?.present ?? 0),
+    absent: Number(data?.summary?.absent ?? 0),
+    late: Number(data?.summary?.late ?? 0),
+  };
 }
 
 function safeWeekly(data) {
-  return data || FALLBACK_WEEKLY;
+  const summary = data?.summary || {};
+
+  return {
+    worked_hours: Number(summary.worked_hours ?? 0),
+    paid_hours: Number(summary.paid_hours ?? 0),
+    total_pay: Number(summary.total_pay ?? 0),
+    late_count: Number(summary.late_count ?? 0),
+    weekly_activity: [
+      { day: "Worked", value: Number(summary.worked_hours ?? 0) },
+      { day: "Paid", value: Number(summary.paid_hours ?? 0) },
+      { day: "Late", value: Number(summary.late_count ?? 0) },
+    ],
+    trend: [
+      { label: "Staff", value: Number(data?.summary?.worked_hours ?? 0) },
+      { label: "Pay", value: Number(data?.summary?.paid_hours ?? 0) },
+      { label: "Total", value: Number(data?.summary?.total_pay ?? 0) / 10 },
+    ],
+  };
 }
 
 export default function AdminAnalytics({ overview, weekly }) {
@@ -55,16 +51,16 @@ export default function AdminAnalytics({ overview, weekly }) {
   const wk = safeWeekly(weekly);
 
   const distributionData = [
-    { name: "Present", value: Number(ov.present || 0) },
-    { name: "Absent", value: Number(ov.absent || 0) },
-    { name: "Late", value: Number(ov.late || 0) }
+    { name: "Present", value: ov.present },
+    { name: "Absent", value: ov.absent },
+    { name: "Late", value: ov.late },
   ].filter((x) => x.value > 0);
 
   const summaryCards = [
-    { label: "Total Staff", value: ov.total_staff ?? 0 },
-    { label: "Present Today", value: ov.present ?? 0 },
-    { label: "Absent", value: ov.absent ?? 0 },
-    { label: "Payroll Total", value: ov.payroll_total ?? 0 }
+    { label: "Total Staff", value: ov.total_staff },
+    { label: "Present Today", value: ov.present },
+    { label: "Absent", value: ov.absent },
+    { label: "Late", value: ov.late },
   ];
 
   return (
@@ -88,7 +84,11 @@ export default function AdminAnalytics({ overview, weekly }) {
         <ResponsiveContainer width="100%" height="100%">
           <PieChart>
             <Pie
-              data={distributionData.length ? distributionData : [{ name: "No Data", value: 1 }]}
+              data={
+                distributionData.length
+                  ? distributionData
+                  : [{ name: "No Data", value: 1 }]
+              }
               cx="50%"
               cy="50%"
               innerRadius={55}
@@ -96,18 +96,19 @@ export default function AdminAnalytics({ overview, weekly }) {
               paddingAngle={4}
               dataKey="value"
             >
-              {(distributionData.length ? distributionData : [{ name: "No Data", value: 1 }]).map(
-                (_, index) => (
-                  <Cell key={index} fill={COLORS[index % COLORS.length]} />
-                )
-              )}
+              {(distributionData.length
+                ? distributionData
+                : [{ name: "No Data", value: 1 }]
+              ).map((_, index) => (
+                <Cell key={index} fill={COLORS[index % COLORS.length]} />
+              ))}
             </Pie>
             <Tooltip
               contentStyle={{
                 background: "#0F1A2E",
                 border: "1px solid #1D2A44",
                 borderRadius: 16,
-                color: "#EAF0FF"
+                color: "#EAF0FF",
               }}
             />
           </PieChart>
@@ -121,14 +122,21 @@ export default function AdminAnalytics({ overview, weekly }) {
         <ResponsiveContainer width="100%" height="100%">
           <BarChart data={wk.weekly_activity || []}>
             <CartesianGrid stroke="#1D2A44" strokeDasharray="3 3" />
-            <XAxis dataKey="day" stroke="#EAF0FF" tick={{ fill: "#EAF0FF", fontSize: 12 }} />
-            <YAxis stroke="#EAF0FF" tick={{ fill: "#EAF0FF", fontSize: 12 }} />
+            <XAxis
+              dataKey="day"
+              stroke="#EAF0FF"
+              tick={{ fill: "#EAF0FF", fontSize: 12 }}
+            />
+            <YAxis
+              stroke="#EAF0FF"
+              tick={{ fill: "#EAF0FF", fontSize: 12 }}
+            />
             <Tooltip
               contentStyle={{
                 background: "#0F1A2E",
                 border: "1px solid #1D2A44",
                 borderRadius: 16,
-                color: "#EAF0FF"
+                color: "#EAF0FF",
               }}
             />
             <Bar dataKey="value" radius={[10, 10, 0, 0]} fill="#0B3D91" />
@@ -143,14 +151,21 @@ export default function AdminAnalytics({ overview, weekly }) {
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={wk.trend || []}>
             <CartesianGrid stroke="#1D2A44" strokeDasharray="3 3" />
-            <XAxis dataKey="label" stroke="#EAF0FF" tick={{ fill: "#EAF0FF", fontSize: 12 }} />
-            <YAxis stroke="#EAF0FF" tick={{ fill: "#EAF0FF", fontSize: 12 }} />
+            <XAxis
+              dataKey="label"
+              stroke="#EAF0FF"
+              tick={{ fill: "#EAF0FF", fontSize: 12 }}
+            />
+            <YAxis
+              stroke="#EAF0FF"
+              tick={{ fill: "#EAF0FF", fontSize: 12 }}
+            />
             <Tooltip
               contentStyle={{
                 background: "#0F1A2E",
                 border: "1px solid #1D2A44",
                 borderRadius: 16,
-                color: "#EAF0FF"
+                color: "#EAF0FF",
               }}
             />
             <Line

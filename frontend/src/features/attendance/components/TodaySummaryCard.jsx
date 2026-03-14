@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Card from "../../../components/ui/Card";
 import Loader from "../../../components/ui/Loader";
 import { dashboardApi } from "../../../api/dashboard.api";
 import { useUiStore } from "../../../state/ui/ui.store";
-import { formatBreakMinutesPrecise } from "../../../utils/format";
+import { formatBreakMinutesPrecise, formatHours } from "../../../utils/format";
 
 function formatClock(value) {
   if (!value) return "-";
@@ -15,8 +15,8 @@ function formatClock(value) {
   });
 }
 
-function formatHours(value) {
-  return Number(value ?? 0).toFixed(2);
+function getLatest(rows = []) {
+  return rows?.[0] || null;
 }
 
 export default function TodaySummaryCard() {
@@ -52,9 +52,9 @@ export default function TodaySummaryCard() {
     };
   }, [loadToday]);
 
-  if (busy) return <Loader label="Loading today..." />;
+  const latest = useMemo(() => getLatest(rows), [rows]);
 
-  const latest = rows?.[0];
+  if (busy) return <Loader label="Loading today..." />;
 
   return (
     <Card>

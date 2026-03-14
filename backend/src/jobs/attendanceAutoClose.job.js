@@ -8,13 +8,19 @@ export function startAttendanceAutoCloseJob() {
 
   started = true;
 
-  timer = setInterval(async () => {
+  const run = async () => {
     try {
       await autoCloseDueAttendances();
     } catch (e) {
       console.error("attendanceAutoClose.job error:", e);
     }
-  }, 60 * 1000);
+  };
+
+  // startup-ka markiiba ha baaro records-kii hore overdue u ahaa
+  run();
+
+  // kadib 1 minute kasta
+  timer = setInterval(run, 60 * 1000);
 
   console.log("🤖 Attendance auto-close job started (every 1 minute)");
 }

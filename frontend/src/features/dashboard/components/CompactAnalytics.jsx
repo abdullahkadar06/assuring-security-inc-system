@@ -10,82 +10,65 @@ import {
 
 function clampPercent(value) {
   const n = Number(value || 0);
+  if (!Number.isFinite(n)) return 0;
   if (n < 0) return 0;
   if (n > 100) return 100;
-  return n;
+  return Math.round(n);
 }
 
 function buildEmployeeData(period, today, weekly) {
-  const worked = Number(weekly?.summary?.worked_net_hours ?? 0);
-  const paid = Number(weekly?.summary?.paid_hours ?? 0);
-  const absent = Number(weekly?.summary?.absent_days ?? 0);
-  const totalPay = Number(weekly?.summary?.total_pay ?? 0);
-  const weeklyBreakMinutes = Number(weekly?.summary?.break_minutes ?? 0);
-  const todayBreakMinutes = Number(today?.[0]?.break_minutes ?? 0);
-  const currentStatus = today?.[0]?.status || "NONE";
+  const latest = today?.[0] || {};
+  const summary = weekly?.summary || {};
 
-  const dayWorked = Number(today?.[0]?.total_hours ?? 0);
-  const dayPaid = Number(today?.[0]?.paid_hours ?? 0);
+  const worked = Number(summary.worked_net_hours ?? 0);
+  const paid = Number(summary.paid_hours ?? 0);
+  const absent = Number(summary.absent_days ?? 0);
+  const totalPay = Number(summary.total_pay ?? 0);
+  const breakToday = Number(latest.break_minutes ?? 0);
+  const breakWeekly = Number(summary.break_minutes ?? 0);
+  const status = latest.status || "NONE";
 
-  const safeWorked = Math.min(100, worked * 12);
-  const safePaid = Math.min(100, paid * 12);
-  const safeBreak = Math.min(100, weeklyBreakMinutes * 1.5);
-  const safePay = Math.min(100, totalPay / 5);
+  const dayWorked = Number(latest.total_hours ?? 0);
+  const dayPaid = Number(latest.paid_hours ?? 0);
 
   if (period === "daily") {
-    const productivity = clampPercent(Math.round(dayWorked * 12.5));
-    const payout = clampPercent(Math.round(dayPaid * 12.5));
-    const idleRisk = clampPercent(
-      Math.round(
-        currentStatus === "NONE"
-          ? 70
-          : currentStatus === "OPEN"
-            ? Math.max(10, 35 - todayBreakMinutes)
-            : Math.max(5, 22 - todayBreakMinutes * 0.6)
-      )
+    const low = clampPercent(
+      status === "NONE" ? 70 : Math.max(5, Math.min(60, breakToday * 2))
     );
+    const middle = clampPercent(dayWorked * 12.5);
+    const high = clampPercent(dayPaid * 12.5);
 
     return {
       label: "Daily Analysis",
       subtitle: "Today activity snapshot",
       stats: [
-        {
-          name: "Low",
-          color: "bg-red-500",
-          value: idleRisk,
-          hint: "Risk / gaps",
-        },
+        { name: "Low", color: "bg-red-500", value: low, hint: "Risk / gaps" },
         {
           name: "Middle",
           color: "bg-amber-400",
-          value: clampPercent(Math.round((productivity + payout) / 2)),
+          value: middle,
           hint: "Balanced work",
         },
         {
           name: "High",
           color: "bg-emerald-500",
-          value: clampPercent(Math.round(Math.max(productivity, payout))),
+          value: high,
           hint: "Completed effort",
         },
       ],
       miniBars: [
-        { key: "D1", value: clampPercent(Math.round(productivity * 0.55)) },
-        { key: "D2", value: clampPercent(Math.round(payout * 0.7)) },
-        { key: "D3", value: clampPercent(Math.round(idleRisk * 0.9)) },
-        {
-          key: "D4",
-          value: clampPercent(Math.round((productivity + payout) / 2)),
-        },
+        { key: "D1", value: low },
+        { key: "D2", value: middle },
+        { key: "D3", value: high },
+        { key: "D4", value: clampPercent((middle + high) / 2) },
       ],
     };
   }
 
   if (period === "weekly") {
-    const attendanceRisk = clampPercent(Math.round(absent * 15));
-    const consistency = clampPercent(Math.round((safeWorked + safePaid) / 2));
-    const performance = clampPercent(
-      Math.round((safeWorked + safePaid + safePay - safeBreak * 0.2) / 2.2)
-    );
+    const low = clampPercent(absent * 14 + breakWeekly * 0.35);
+    const middle = clampPercent(worked * 8);
+    const high = clampPercent(paid * 8 + totalPay * 0.08);
 
     return {
       label: "Weekly Analysis",
@@ -94,97 +77,87 @@ function buildEmployeeData(period, today, weekly) {
         {
           name: "Low",
           color: "bg-red-500",
-          value: attendanceRisk,
+          value: low,
           hint: "Attendance gaps",
         },
         {
           name: "Middle",
           color: "bg-amber-400",
-          value: consistency,
+          value: middle,
           hint: "General consistency",
         },
         {
           name: "High",
           color: "bg-emerald-500",
-          value: performance,
+          value: high,
           hint: "Strong performance",
         },
       ],
       miniBars: [
-        { key: "D1", value: clampPercent(Math.round(safeWorked * 0.6)) },
-        { key: "D2", value: clampPercent(Math.round(safePaid * 0.74)) },
-        { key: "D3", value: clampPercent(Math.round(attendanceRisk * 0.95)) },
-        { key: "D4", value: clampPercent(Math.round(safePay * 0.7)) },
-        { key: "D5", value: clampPercent(Math.round(consistency)) },
-        { key: "D6", value: clampPercent(Math.round(performance * 0.82)) },
-        {
-          key: "D7",
-          value: clampPercent(Math.round((performance + consistency) / 2)),
-        },
+        { key: "D1", value: low },
+        { key: "D2", value: middle },
+        { key: "D3", value: high },
+        { key: "D4", value: clampPercent(worked * 7) },
+        { key: "D5", value: clampPercent(paid * 7) },
+        { key: "D6", value: clampPercent(totalPay * 0.06) },
+        { key: "D7", value: clampPercent((middle + high) / 2) },
       ],
     };
   }
 
-  const monthlyWorked = clampPercent(Math.round(worked * 4 * 3));
-  const monthlyPaid = clampPercent(Math.round(paid * 4 * 3));
-  const monthlyRisk = clampPercent(Math.round(absent * 10));
-  const monthlyGrowth = clampPercent(
-    Math.round((monthlyWorked + monthlyPaid + safePay) / 2.5)
-  );
+  const low = clampPercent(absent * 12);
+  const middle = clampPercent(worked * 10);
+  const high = clampPercent(paid * 10 + totalPay * 0.07);
 
   return {
     label: "Monthly Analysis",
     subtitle: "Estimated monthly trend",
     stats: [
-      {
-        name: "Low",
-        color: "bg-red-500",
-        value: monthlyRisk,
-        hint: "Monthly gaps",
-      },
+      { name: "Low", color: "bg-red-500", value: low, hint: "Monthly gaps" },
       {
         name: "Middle",
         color: "bg-amber-400",
-        value: clampPercent(Math.round((monthlyWorked + monthlyPaid) / 2)),
+        value: middle,
         hint: "Stable output",
       },
       {
         name: "High",
         color: "bg-emerald-500",
-        value: monthlyGrowth,
+        value: high,
         hint: "Growth level",
       },
     ],
     miniBars: [
-      { key: "D1", value: clampPercent(Math.round(monthlyWorked * 0.55)) },
-      { key: "D2", value: clampPercent(Math.round(monthlyPaid * 0.72)) },
-      { key: "D3", value: clampPercent(Math.round(monthlyRisk * 0.9)) },
-      { key: "D4", value: clampPercent(Math.round(monthlyGrowth * 0.84)) },
-      {
-        key: "D5",
-        value: clampPercent(Math.round((monthlyWorked + monthlyPaid) / 2)),
-      },
-      { key: "D6", value: clampPercent(Math.round(safePay)) },
-      {
-        key: "D7",
-        value: clampPercent(Math.round((monthlyGrowth + safePay) / 2)),
-      },
+      { key: "D1", value: low },
+      { key: "D2", value: middle },
+      { key: "D3", value: high },
+      { key: "D4", value: clampPercent((middle + high) / 2) },
+      { key: "D5", value: clampPercent(worked * 8) },
+      { key: "D6", value: clampPercent(paid * 8) },
+      { key: "D7", value: clampPercent(totalPay * 0.06) },
     ],
   };
 }
 
 function buildAdminData(period, overview, weekly) {
-  const totalStaff = Number(overview?.summary?.total_staff ?? 0);
-  const present = Number(overview?.summary?.present ?? 0);
-  const absent = Number(overview?.summary?.absent ?? 0);
-  const late = Number(overview?.summary?.late ?? 0);
-  const worked = Number(weekly?.summary?.worked_hours ?? 0);
-  const paid = Number(weekly?.summary?.paid_hours ?? 0);
-  const totalPay = Number(weekly?.summary?.total_pay ?? 0);
+  const ov = overview?.summary || {};
+  const wk = weekly?.summary || {};
 
-  const attendanceHealth = totalStaff > 0 ? (present / totalStaff) * 100 : 0;
-  const delayRisk = totalStaff > 0 ? (late / totalStaff) * 100 : 0;
-  const absenceRisk = totalStaff > 0 ? (absent / totalStaff) * 100 : 0;
+  const totalStaff = Number(ov.total_staff ?? 0);
+  const present = Number(ov.present ?? 0);
+  const absent = Number(ov.absent ?? 0);
+  const late = Number(ov.late ?? 0);
+
+  const worked = Number(wk.worked_hours ?? 0);
+  const paid = Number(wk.paid_hours ?? 0);
+  const totalPay = Number(wk.total_pay ?? 0);
+
+  const attendanceRate =
+    totalStaff > 0 ? clampPercent((present / totalStaff) * 100) : 0;
+  const absenceRate =
+    totalStaff > 0 ? clampPercent((absent / totalStaff) * 100) : 0;
+  const lateRate =
+    totalStaff > 0 ? clampPercent((late / totalStaff) * 100) : 0;
 
   if (period === "daily") {
     return {
@@ -194,27 +167,27 @@ function buildAdminData(period, overview, weekly) {
         {
           name: "Low",
           color: "bg-red-500",
-          value: clampPercent(Math.round(absenceRisk + delayRisk)),
+          value: clampPercent(absenceRate + lateRate),
           hint: "Risk / absence",
         },
         {
           name: "Middle",
           color: "bg-amber-400",
-          value: clampPercent(Math.round(attendanceHealth * 0.75)),
+          value: clampPercent(attendanceRate * 0.7),
           hint: "Mid activity",
         },
         {
           name: "High",
           color: "bg-emerald-500",
-          value: clampPercent(Math.round(attendanceHealth)),
+          value: attendanceRate,
           hint: "Healthy system",
         },
       ],
       miniBars: [
-        { key: "A1", value: clampPercent(Math.round(attendanceHealth * 0.88)) },
-        { key: "A2", value: clampPercent(Math.round(delayRisk * 1.2 + 10)) },
-        { key: "A3", value: clampPercent(Math.round(absenceRisk * 1.15 + 8)) },
-        { key: "A4", value: clampPercent(Math.round(attendanceHealth * 0.7)) },
+        { key: "A1", value: absenceRate },
+        { key: "A2", value: lateRate },
+        { key: "A3", value: attendanceRate },
+        { key: "A4", value: clampPercent((attendanceRate + lateRate) / 2) },
       ],
     };
   }
@@ -227,33 +200,30 @@ function buildAdminData(period, overview, weekly) {
         {
           name: "Low",
           color: "bg-red-500",
-          value: clampPercent(Math.round(absenceRisk + delayRisk)),
+          value: clampPercent(absenceRate + lateRate),
           hint: "Risk / absence",
         },
         {
           name: "Middle",
           color: "bg-amber-400",
-          value: clampPercent(Math.round((worked + paid) * 0.6)),
+          value: clampPercent(worked * 3.5),
           hint: "Mid activity",
         },
         {
           name: "High",
           color: "bg-emerald-500",
-          value: clampPercent(Math.round(attendanceHealth + totalPay / 20)),
+          value: clampPercent(paid * 3.5 + totalPay * 0.04),
           hint: "Healthy system",
         },
       ],
       miniBars: [
-        { key: "A1", value: clampPercent(Math.round(attendanceHealth * 0.88)) },
-        { key: "A2", value: clampPercent(Math.round(delayRisk * 1.2 + 10)) },
-        { key: "A3", value: clampPercent(Math.round(absenceRisk * 1.15 + 8)) },
-        { key: "A4", value: clampPercent(Math.round(worked * 1.4)) },
-        { key: "A5", value: clampPercent(Math.round(paid * 1.55)) },
-        { key: "A6", value: clampPercent(Math.round(totalPay / 18)) },
-        {
-          key: "A7",
-          value: clampPercent(Math.round((attendanceHealth + paid) * 0.55)),
-        },
+        { key: "A1", value: clampPercent(worked * 3.5) },
+        { key: "A2", value: clampPercent(paid * 3.5) },
+        { key: "A3", value: clampPercent(totalPay * 0.04) },
+        { key: "A4", value: absenceRate },
+        { key: "A5", value: lateRate },
+        { key: "A6", value: attendanceRate },
+        { key: "A7", value: clampPercent((attendanceRate + paid * 3) / 2) },
       ],
     };
   }
@@ -265,37 +235,30 @@ function buildAdminData(period, overview, weekly) {
       {
         name: "Low",
         color: "bg-red-500",
-        value: clampPercent(Math.round((absenceRisk + delayRisk) * 1.2)),
+        value: clampPercent((absenceRate + lateRate) * 1.2),
         hint: "Monthly risk",
       },
       {
         name: "Middle",
         color: "bg-amber-400",
-        value: clampPercent(Math.round((worked * 4 + paid * 4) * 0.35)),
+        value: clampPercent(worked * 4),
         hint: "Operational stability",
       },
       {
         name: "High",
         color: "bg-emerald-500",
-        value: clampPercent(
-          Math.round(attendanceHealth + totalPay / 12 + paid)
-        ),
+        value: clampPercent(paid * 4 + totalPay * 0.05),
         hint: "System growth",
       },
     ],
     miniBars: [
-      { key: "A1", value: clampPercent(Math.round(attendanceHealth * 0.9)) },
-      { key: "A2", value: clampPercent(Math.round(delayRisk * 1.25 + 8)) },
-      { key: "A3", value: clampPercent(Math.round(absenceRisk * 1.2 + 8)) },
-      { key: "A4", value: clampPercent(Math.round(worked * 2.1)) },
-      { key: "A5", value: clampPercent(Math.round(paid * 2.2)) },
-      { key: "A6", value: clampPercent(Math.round(totalPay / 10)) },
-      {
-        key: "A7",
-        value: clampPercent(
-          Math.round((attendanceHealth + worked + paid) * 0.45)
-        ),
-      },
+      { key: "A1", value: clampPercent(worked * 4) },
+      { key: "A2", value: clampPercent(paid * 4) },
+      { key: "A3", value: clampPercent(totalPay * 0.05) },
+      { key: "A4", value: absenceRate },
+      { key: "A5", value: lateRate },
+      { key: "A6", value: attendanceRate },
+      { key: "A7", value: clampPercent((attendanceRate + paid * 4) / 2) },
     ],
   };
 }

@@ -7,6 +7,5 @@ export const breaksApi = {
   end: (payload = {}) =>
     http.post("/breaks/end", payload).then((r) => r.data),
 
-  current: () =>
-    http.get("/breaks/current").then((r) => r.data),
+  current: () => http.get("/breaks/current").then((r) => r.data),
 };

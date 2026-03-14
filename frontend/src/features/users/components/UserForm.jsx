@@ -5,6 +5,7 @@ import { useUiStore } from "../../../state/ui/ui.store";
 import { usersApi } from "../../../api/users.api";
 import { shiftsApi } from "../../../api/shifts.api";
 import { formatShiftOption } from "../../../utils/shiftFormatter";
+import { isStandardEmail } from "../../../utils/format";
 
 function getLocationPlaceholders() {
   const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "";
@@ -80,6 +81,8 @@ export default function UserForm({ onSaved }) {
     };
   }, [showToast]);
 
+  const normalizedEmail = email.trim().toLowerCase();
+
   const submit = async (e) => {
     e.preventDefault();
 
@@ -87,8 +90,12 @@ export default function UserForm({ onSaved }) {
       showToast("Full name is required", "error");
       return;
     }
-    if (!email.trim()) {
+    if (!normalizedEmail) {
       showToast("Email is required", "error");
+      return;
+    }
+    if (!isStandardEmail(normalizedEmail)) {
+      showToast("Enter a valid email address", "error");
       return;
     }
     if (!password.trim()) {
@@ -105,7 +112,7 @@ export default function UserForm({ onSaved }) {
     try {
       await usersApi.createUser({
         full_name: full_name.trim(),
-        email: email.trim(),
+        email: normalizedEmail,
         phone: phone.trim() || undefined,
         address: address.trim() || undefined,
         password: password.trim(),
@@ -132,7 +139,7 @@ export default function UserForm({ onSaved }) {
   };
 
   return (
-    <form onSubmit={submit} className="space-y-3">
+    <form onSubmit={submit} className="space-y-3" noValidate>
       <div>
         <div className="mb-1 text-sm text-brand-text/70">Full name</div>
         <Input
@@ -148,7 +155,10 @@ export default function UserForm({ onSaved }) {
           type="email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          placeholder="Enter email"
+          onBlur={() => {
+            if (email !== normalizedEmail) setEmail(normalizedEmail);
+          }}
+          placeholder="name@example.com"
         />
       </div>
 

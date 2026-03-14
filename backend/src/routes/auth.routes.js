@@ -7,12 +7,20 @@ import { env } from "../config/env.js";
 import { requireAuth } from "../middleware/auth.middleware.js";
 import { requireRole } from "../middleware/requireRole.js";
 import { auditLog } from "../utils/audit.js";
+import { isStandardEmail, normalizeEmail } from "../utils/email.util.js";
 
 const router = Router();
 
+const standardEmailSchema = z
+  .string()
+  .transform((value) => normalizeEmail(value))
+  .refine((value) => isStandardEmail(value), {
+    message: "Valid standard email is required",
+  });
+
 const registerSchema = z.object({
-  full_name: z.string().min(2),
-  email: z.string().email(),
+  full_name: z.string().trim().min(2),
+  email: standardEmailSchema,
   phone: z.string().optional(),
   address: z.string().optional(),
   password: z.string().min(6),
@@ -22,7 +30,7 @@ const registerSchema = z.object({
 });
 
 const loginSchema = z.object({
-  email: z.string().email(),
+  email: standardEmailSchema,
   password: z.string().min(1),
 });
 
@@ -93,10 +101,10 @@ router.post(
         VALUES ($1,$2,$3,$4,$5,$6,$7,$8, TRUE)
         RETURNING id, full_name, email, role, hourly_rate, shift_id, phone, address, created_at`,
         [
-          full_name,
+          full_name.trim(),
           email,
-          phone ?? null,
-          address ?? null,
+          phone?.trim() || null,
+          address?.trim() || null,
           hashed,
           role,
           hourly_rate,
@@ -127,7 +135,10 @@ router.post("/login", async (req, res, next) => {
   try {
     const parsed = loginSchema.safeParse(req.body);
     if (!parsed.success) {
-      return res.status(400).json({ message: "Invalid payload" });
+      return res.status(400).json({
+        message: "Invalid payload",
+        errors: parsed.error.flatten(),
+      });
     }
 
     const { email, password } = parsed.data;
@@ -168,11 +179,9 @@ router.post("/login", async (req, res, next) => {
       return res.status(401).json({ message: "Invalid email or password" });
     }
 
-    const token = jwt.sign(
-      { sub: user.id, role: user.role },
-      env.jwtSecret,
-      { expiresIn: env.jwtExpiresIn }
-    );
+    const token = jwt.sign({ sub: user.id, role: user.role }, env.jwtSecret, {
+      expiresIn: env.jwtExpiresIn,
+    });
 
     return res.json({
       token,

@@ -33,11 +33,11 @@ app.use(
   })
 );
 
-app.get("/", (req, res) => {
+app.get("/", (_req, res) => {
   res.json({ message: "API is running" });
 });
 
-app.get("/api/ping", async (req, res) => {
+app.get("/api/ping", async (_req, res) => {
   try {
     await pool.query("SELECT 1");
     res.status(200).json({ message: "System is awake and healthy!" });
@@ -46,7 +46,7 @@ app.get("/api/ping", async (req, res) => {
   }
 });
 
-app.get("/api/health", async (req, res, next) => {
+app.get("/api/health", async (_req, res, next) => {
   try {
     const result = await pool.query("SELECT NOW() as now");
     res.json({
@@ -70,7 +70,7 @@ app.use("/api/reports", reportsRoutes);
 app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/admin", adminRoutes);
 
-app.use((req, res) => res.status(404).json({ message: "Route not found" }));
+app.use((_req, res) => res.status(404).json({ message: "Route not found" }));
 
 app.use(errorHandler);
 

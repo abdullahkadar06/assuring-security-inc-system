@@ -22,10 +22,10 @@ export function toMs(dateLike) {
 
 export function formatBreakMinutesPrecise(totalMinutes = 0) {
   const mins = Math.max(0, Number(totalMinutes || 0));
-  const totalSeconds = Math.max(0, Math.round(mins * 60));
 
-  if (totalSeconds <= 0) return "0s";
+  if (!Number.isFinite(mins) || mins <= 0) return "0s";
 
+  const totalSeconds = Math.round(mins * 60);
   const hours = Math.floor(totalSeconds / 3600);
   const minutes = Math.floor((totalSeconds % 3600) / 60);
   const seconds = totalSeconds % 60;
@@ -33,7 +33,6 @@ export function formatBreakMinutesPrecise(totalMinutes = 0) {
   if (hours > 0) {
     if (minutes === 0 && seconds === 0) return `${hours}h`;
     if (seconds === 0) return `${hours}h ${minutes}m`;
-    if (minutes === 0) return `${hours}h ${seconds}s`;
     return `${hours}h ${minutes}m ${seconds}s`;
   }
 
@@ -43,4 +42,24 @@ export function formatBreakMinutesPrecise(totalMinutes = 0) {
   }
 
   return `${seconds}s`;
+}
+
+export function formatHours(value = 0) {
+  return Number(value ?? 0).toFixed(2);
+}
+
+export function formatMoney(value = 0, currency = "$") {
+  return `${currency}${Number(value ?? 0).toFixed(2)}`;
+}
+
+export function isStandardEmail(value = "") {
+  const email = String(value || "").trim().toLowerCase();
+
+  if (!email) return false;
+  if (email.length > 254) return false;
+
+  const regex =
+    /^(?!.*\.\.)(?!\.)(?!.*\.$)[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$/;
+
+  return regex.test(email);
 }
