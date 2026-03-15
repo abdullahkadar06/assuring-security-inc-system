@@ -6,6 +6,8 @@ import { getTodayAttendanceForUser } from "../services/attendanceEngine.service.
 import {
   FINALIZED_ATTENDANCE_STATUSES,
   SYSTEM_UTC_OFFSET_MINUTES,
+  PAID_BREAK_LIMIT_SECONDS,
+  MAX_SHIFT_HOURS,
 } from "../constants/attendancePolicy.constants.js";
 
 const router = Router();
@@ -276,76 +278,224 @@ router.get("/me/weekly", requireAuth, async (req, res, next) => {
            a.scheduled_start,
            a.clock_in,
            a.clock_out,
-           a.total_hours,
-           a.paid_hours,
-           COALESCE(
-             p.total_pay,
-             ROUND((COALESCE(a.paid_hours, 0) * COALESCE(u.hourly_rate, 0))::numeric, 2)
-           ) AS total_pay,
-           COALESCE(
-             (
-               SELECT SUM(
-                 EXTRACT(EPOCH FROM (b.break_end - b.break_start))
-               )
-               FROM breaks b
-               WHERE b.attendance_id = a.id
-                 AND b.break_start IS NOT NULL
-                 AND b.break_end IS NOT NULL
-             ),
-             0
-           ) AS break_seconds
+           CASE
+             WHEN a.status IN ('CLOSED', 'AUTO_CLOSED') AND a.clock_out IS NOT NULL
+               THEN a.clock_out
+             WHEN a.status = 'OPEN' AND a.scheduled_end IS NOT NULL
+               THEN LEAST(NOW(), a.scheduled_end)
+             WHEN a.status = 'OPEN'
+               THEN NOW()
+             ELSE a.clock_out
+           END AS effective_clock_out,
+           COALESCE(u.hourly_rate, 0) AS hourly_rate
          FROM attendance a
          JOIN users u
            ON u.id = a.user_id
-         LEFT JOIN payroll p
-           ON p.attendance_id = a.id
          WHERE a.user_id = $1
-           AND a.status = ANY($4::text[])
+           AND a.status IN ('OPEN', 'CLOSED', 'AUTO_CLOSED')
+           AND a.scheduled_start IS NOT NULL
+           AND a.scheduled_start::date BETWEEN $2::date AND $3::date
+       ),
+       att_calc AS (
+         SELECT
+           ab.id,
+           ab.user_id,
+           ab.status,
+           ab.scheduled_start,
+           ab.clock_in,
+           ab.clock_out,
+           ab.effective_clock_out,
+           COALESCE((
+             SELECT SUM(
+               GREATEST(
+                 0,
+                 EXTRACT(
+                   EPOCH FROM (
+                     LEAST(COALESCE(b.break_end, ab.effective_clock_out), ab.effective_clock_out) - b.break_start
+                   )
+                 )
+               )
+             )
+             FROM breaks b
+             WHERE b.attendance_id = ab.id
+               AND b.break_start IS NOT NULL
+               AND b.break_start < ab.effective_clock_out
+           ), 0) AS break_seconds,
+           ab.hourly_rate
+         FROM att_base ab
+       ),
+       final_rows AS (
+         SELECT
+           ac.id,
+           ac.user_id,
+           ac.status,
+           ac.scheduled_start,
+           ROUND(
+             GREATEST(
+               0,
+               EXTRACT(EPOCH FROM (ac.effective_clock_out - ac.clock_in)) - ac.break_seconds
+             ) / 3600.0
+           ::numeric, 2) AS worked_net_hours,
+           ROUND(
+             LEAST(
+               $4::numeric,
+               (
+                 GREATEST(
+                   0,
+                   EXTRACT(EPOCH FROM (ac.effective_clock_out - ac.clock_in))
+                   - GREATEST(0, ac.break_seconds - $5)
+                 ) / 3600.0
+               )
+             )::numeric,
+             2
+           ) AS paid_hours,
+           ROUND((ac.break_seconds / 60.0)::numeric, 2) AS break_minutes,
+           ROUND(
+             (
+               LEAST(
+                 $4::numeric,
+                 (
+                   GREATEST(
+                     0,
+                     EXTRACT(EPOCH FROM (ac.effective_clock_out - ac.clock_in))
+                     - GREATEST(0, ac.break_seconds - $5)
+                   ) / 3600.0
+                 )
+               ) * ac.hourly_rate
+             )::numeric,
+             2
+           ) AS total_pay
+         FROM att_calc ac
+       )
+       SELECT
+         COUNT(*) AS shifts_count,
+         ROUND(COALESCE(SUM(worked_net_hours), 0)::numeric, 2) AS worked_net_hours,
+         ROUND(COALESCE(SUM(paid_hours), 0)::numeric, 2) AS paid_hours,
+         ROUND(COALESCE(SUM(break_minutes), 0)::numeric, 2) AS break_minutes,
+         ROUND(COALESCE(SUM(total_pay), 0)::numeric, 2) AS total_pay
+       FROM final_rows`,
+      [
+        req.user.id,
+        weekStartISO,
+        effectiveEndISO,
+        MAX_SHIFT_HOURS,
+        PAID_BREAK_LIMIT_SECONDS,
+      ]
+    );
+
+    const attendance = await pool.query(
+      `WITH att_base AS (
+         SELECT
+           a.id,
+           a.shift_id,
+           a.clock_in,
+           a.clock_out,
+           a.status,
+           a.scheduled_start,
+           a.scheduled_end,
+           CASE
+             WHEN a.status IN ('CLOSED', 'AUTO_CLOSED') AND a.clock_out IS NOT NULL
+               THEN a.clock_out
+             WHEN a.status = 'OPEN' AND a.scheduled_end IS NOT NULL
+               THEN LEAST(NOW(), a.scheduled_end)
+             WHEN a.status = 'OPEN'
+               THEN NOW()
+             ELSE a.clock_out
+           END AS effective_clock_out
+         FROM attendance a
+         WHERE a.user_id = $1
+           AND a.status IN ('OPEN', 'CLOSED', 'AUTO_CLOSED')
            AND a.scheduled_start IS NOT NULL
            AND a.scheduled_start::date BETWEEN $2::date AND $3::date
        )
        SELECT
-         COUNT(*) AS shifts_count,
-         ROUND(COALESCE(SUM(total_hours), 0)::numeric, 2) AS worked_net_hours,
-         ROUND(COALESCE(SUM(paid_hours), 0)::numeric, 2) AS paid_hours,
-         ROUND(COALESCE(SUM(break_seconds) / 60.0, 0)::numeric, 2) AS break_minutes,
-         ROUND(COALESCE(SUM(total_pay), 0)::numeric, 2) AS total_pay
-       FROM att_base`,
-      [req.user.id, weekStartISO, effectiveEndISO, FINALIZED_ATTENDANCE_STATUSES]
-    );
-
-    const attendance = await pool.query(
-      `SELECT
-          a.id,
-          a.shift_id,
-          a.clock_in,
-          a.clock_out,
-          a.total_hours,
-          a.paid_hours,
-          a.status,
-          a.scheduled_start,
-          a.scheduled_end,
-          COALESCE(
-            ROUND(
-              SUM(
-                EXTRACT(EPOCH FROM (b.break_end - b.break_start))
-              ) / 60.0,
-              2
-            ),
-            0
-          ) AS break_minutes
-       FROM attendance a
-       LEFT JOIN breaks b
-         ON b.attendance_id = a.id
-        AND b.break_start IS NOT NULL
-        AND b.break_end IS NOT NULL
-       WHERE a.user_id = $1
-         AND a.status = ANY($4::text[])
-         AND a.scheduled_start IS NOT NULL
-         AND a.scheduled_start::date BETWEEN $2::date AND $3::date
-       GROUP BY a.id
-       ORDER BY a.id DESC`,
-      [req.user.id, weekStartISO, effectiveEndISO, FINALIZED_ATTENDANCE_STATUSES]
+         ab.id,
+         ab.shift_id,
+         ab.clock_in,
+         ab.clock_out,
+         ab.status,
+         ab.scheduled_start,
+         ab.scheduled_end,
+         ROUND(
+           GREATEST(
+             0,
+             EXTRACT(EPOCH FROM (ab.effective_clock_out - ab.clock_in))
+             - COALESCE((
+                 SELECT SUM(
+                   GREATEST(
+                     0,
+                     EXTRACT(
+                       EPOCH FROM (
+                         LEAST(COALESCE(b.break_end, ab.effective_clock_out), ab.effective_clock_out) - b.break_start
+                       )
+                     )
+                   )
+                 )
+                 FROM breaks b
+                 WHERE b.attendance_id = ab.id
+                   AND b.break_start IS NOT NULL
+                   AND b.break_start < ab.effective_clock_out
+               ), 0)
+           ) / 3600.0
+         ::numeric, 2) AS total_hours,
+         ROUND(
+           LEAST(
+             $4::numeric,
+             (
+               GREATEST(
+                 0,
+                 EXTRACT(EPOCH FROM (ab.effective_clock_out - ab.clock_in))
+                 - GREATEST(
+                     0,
+                     COALESCE((
+                       SELECT SUM(
+                         GREATEST(
+                           0,
+                           EXTRACT(
+                             EPOCH FROM (
+                               LEAST(COALESCE(b.break_end, ab.effective_clock_out), ab.effective_clock_out) - b.break_start
+                             )
+                           )
+                         )
+                       )
+                       FROM breaks b
+                       WHERE b.attendance_id = ab.id
+                         AND b.break_start IS NOT NULL
+                         AND b.break_start < ab.effective_clock_out
+                     ), 0) - $5
+                   )
+               ) / 3600.0
+             )
+           )::numeric,
+           2
+         ) AS paid_hours,
+         ROUND(
+           COALESCE((
+             SELECT SUM(
+               GREATEST(
+                 0,
+                 EXTRACT(
+                   EPOCH FROM (
+                     LEAST(COALESCE(b.break_end, ab.effective_clock_out), ab.effective_clock_out) - b.break_start
+                   )
+                 )
+               )
+             )
+             FROM breaks b
+             WHERE b.attendance_id = ab.id
+               AND b.break_start IS NOT NULL
+               AND b.break_start < ab.effective_clock_out
+           ), 0) / 60.0
+         ::numeric, 2) AS break_minutes
+       FROM att_base ab
+       ORDER BY ab.id DESC`,
+      [
+        req.user.id,
+        weekStartISO,
+        effectiveEndISO,
+        MAX_SHIFT_HOURS,
+        PAID_BREAK_LIMIT_SECONDS,
+      ]
     );
 
     const absentDays = await getLiveAbsentDaysForUser(
@@ -462,30 +612,109 @@ router.get(
              a.id,
              a.user_id,
              a.status,
+             a.clock_in,
+             a.clock_out,
              a.scheduled_start,
-             a.total_hours,
-             a.paid_hours,
+             a.scheduled_end,
              a.late_minutes,
-             COALESCE(
-               p.total_pay,
-               ROUND((COALESCE(a.paid_hours, 0) * COALESCE(u.hourly_rate, 0))::numeric, 2)
-             ) AS total_pay
+             COALESCE(u.hourly_rate, 0) AS hourly_rate,
+             CASE
+               WHEN a.status IN ('CLOSED', 'AUTO_CLOSED') AND a.clock_out IS NOT NULL
+                 THEN a.clock_out
+               WHEN a.status = 'OPEN' AND a.scheduled_end IS NOT NULL
+                 THEN LEAST(NOW(), a.scheduled_end)
+               WHEN a.status = 'OPEN'
+                 THEN NOW()
+               ELSE a.clock_out
+             END AS effective_clock_out
            FROM attendance a
            JOIN users u
              ON u.id = a.user_id
-           LEFT JOIN payroll p
-             ON p.attendance_id = a.id
-           WHERE a.status = ANY($3::text[])
+           WHERE a.status IN ('OPEN', 'CLOSED', 'AUTO_CLOSED')
              AND a.scheduled_start IS NOT NULL
              AND a.scheduled_start::date BETWEEN $1::date AND $2::date
+         ),
+         att_calc AS (
+           SELECT
+             ab.id,
+             ab.user_id,
+             ab.status,
+             ab.late_minutes,
+             COALESCE((
+               SELECT SUM(
+                 GREATEST(
+                   0,
+                   EXTRACT(
+                     EPOCH FROM (
+                       LEAST(COALESCE(b.break_end, ab.effective_clock_out), ab.effective_clock_out) - b.break_start
+                     )
+                   )
+                 )
+               )
+               FROM breaks b
+               WHERE b.attendance_id = ab.id
+                 AND b.break_start IS NOT NULL
+                 AND b.break_start < ab.effective_clock_out
+             ), 0) AS break_seconds,
+             ab.clock_in,
+             ab.effective_clock_out,
+             ab.hourly_rate
+           FROM att_base ab
+         ),
+         final_rows AS (
+           SELECT
+             ac.id,
+             ac.user_id,
+             ac.status,
+             ac.late_minutes,
+             ROUND(
+               GREATEST(
+                 0,
+                 EXTRACT(EPOCH FROM (ac.effective_clock_out - ac.clock_in)) - ac.break_seconds
+               ) / 3600.0
+             ::numeric, 2) AS worked_hours,
+             ROUND(
+               LEAST(
+                 $3::numeric,
+                 (
+                   GREATEST(
+                     0,
+                     EXTRACT(EPOCH FROM (ac.effective_clock_out - ac.clock_in))
+                     - GREATEST(0, ac.break_seconds - $4)
+                   ) / 3600.0
+                 )
+               )::numeric,
+               2
+             ) AS paid_hours,
+             ROUND(
+               (
+                 LEAST(
+                   $3::numeric,
+                   (
+                     GREATEST(
+                       0,
+                       EXTRACT(EPOCH FROM (ac.effective_clock_out - ac.clock_in))
+                       - GREATEST(0, ac.break_seconds - $4)
+                     ) / 3600.0
+                   )
+                 ) * ac.hourly_rate
+               )::numeric,
+               2
+             ) AS total_pay
+           FROM att_calc ac
          )
          SELECT
-           ROUND(COALESCE(SUM(total_hours), 0)::numeric, 2) AS worked_hours,
+           ROUND(COALESCE(SUM(worked_hours), 0)::numeric, 2) AS worked_hours,
            ROUND(COALESCE(SUM(paid_hours), 0)::numeric, 2) AS paid_hours,
            COUNT(*) FILTER (WHERE late_minutes > 0) AS late_count,
            ROUND(COALESCE(SUM(total_pay), 0)::numeric, 2) AS total_pay
-         FROM att_base`,
-        [weekStartISO, effectiveEndISO, FINALIZED_ATTENDANCE_STATUSES]
+         FROM final_rows`,
+        [
+          weekStartISO,
+          effectiveEndISO,
+          MAX_SHIFT_HOURS,
+          PAID_BREAK_LIMIT_SECONDS,
+        ]
       );
 
       const liveAbsentDays = await getLiveAbsentDaysForAllUsers(

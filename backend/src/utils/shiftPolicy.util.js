@@ -128,7 +128,10 @@ function applyGraceWindow(policy, graceBeforeMinutes, graceAfterMinutes) {
     policy.scheduledStart.getTime() - graceBefore * 60_000
   );
 
-  const latestClockIn = new Date(policy.scheduledEnd.getTime());
+  // SAX: latest clock-in waa start + graceAfter, ma aha shift end
+  const latestClockIn = new Date(
+    policy.scheduledStart.getTime() + graceAfter * 60_000
+  );
 
   const autoCloseAt = new Date(
     policy.scheduledEnd.getTime() + graceAfter * 60_000
@@ -153,6 +156,8 @@ export function resolveShiftPolicyForClockIn({
   const today = startOfSystemDay(now);
   const yesterday = addSystemDays(today, -1);
 
+  // night shift-ka si uu after midnight u shaqeeyo,
+  // waxaan eegaynaa yesterday + today
   const candidates = [
     buildShiftFromRow(yesterday, userShift),
     buildShiftFromRow(today, userShift),
@@ -164,7 +169,8 @@ export function resolveShiftPolicyForClockIn({
 
   const matched = withGrace.find(
     (candidate) =>
-      now >= candidate.earliestClockIn && now < candidate.latestClockIn
+      now.getTime() >= candidate.earliestClockIn.getTime() &&
+      now.getTime() <= candidate.latestClockIn.getTime()
   );
 
   if (matched) {
@@ -217,14 +223,17 @@ export function calculateLateMinutes({
   scheduledStart,
   graceAfterMinutes = DEFAULT_GRACE_AFTER_MINUTES,
 }) {
+  const actual = new Date(actualClockIn);
+  const scheduled = new Date(scheduledStart);
+
   const diffMinutes = Math.floor(
-    (actualClockIn.getTime() - scheduledStart.getTime()) / 60_000
+    (actual.getTime() - scheduled.getTime()) / 60_000
   );
 
   if (diffMinutes <= 0) return 0;
-  if (diffMinutes <= graceAfterMinutes) return diffMinutes;
 
-  return graceAfterMinutes;
+  // qofku haddii uu ka dambeeyo start-ka, late waa inta uu ka dambeeyo
+  return diffMinutes > graceAfterMinutes ? diffMinutes : diffMinutes;
 }
 
 export function getSystemDateISO(date = new Date()) {

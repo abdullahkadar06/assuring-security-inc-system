@@ -21,7 +21,10 @@ export default function CheckOutButton() {
       const d = await dashboardApi.meToday();
       setTodayRows(d?.today || []);
     } catch (e) {
-      showToast("Failed loading attendance state", "error");
+      showToast(
+        e?.response?.data?.message || "Failed loading attendance state",
+        "error"
+      );
     } finally {
       setLoadingState(false);
     }
@@ -33,9 +36,13 @@ export default function CheckOutButton() {
     const handleRefresh = () => loadToday();
 
     window.addEventListener("attendance:changed", handleRefresh);
+    window.addEventListener("break:changed", handleRefresh);
+    window.addEventListener("payroll:changed", handleRefresh);
 
     return () => {
       window.removeEventListener("attendance:changed", handleRefresh);
+      window.removeEventListener("break:changed", handleRefresh);
+      window.removeEventListener("payroll:changed", handleRefresh);
     };
   }, [loadToday]);
 
@@ -44,18 +51,15 @@ export default function CheckOutButton() {
 
   const disabled = useMemo(() => {
     if (busy || loadingState) return true;
-
     return status !== "OPEN";
   }, [busy, loadingState, status]);
 
   const text = useMemo(() => {
     if (busy) return "Checking out...";
     if (loadingState) return "Loading...";
-
     if (status === "OPEN") return "Clock Out";
     if (status === "CLOSED") return "Already Closed";
     if (status === "AUTO_CLOSED") return "Auto Closed";
-
     return "No Open Shift";
   }, [busy, loadingState, status]);
 
@@ -70,6 +74,8 @@ export default function CheckOutButton() {
       showToast(res?.message || "Clock-out successful");
 
       window.dispatchEvent(new Event("attendance:changed"));
+      window.dispatchEvent(new Event("break:changed"));
+      window.dispatchEvent(new Event("payroll:changed"));
     } catch (e) {
       showToast(e?.response?.data?.message || "Clock-out failed", "error");
     } finally {

@@ -21,7 +21,10 @@ export default function CheckInButton() {
       const d = await dashboardApi.meToday();
       setTodayRows(d?.today || []);
     } catch (e) {
-      showToast("Failed loading attendance state", "error");
+      showToast(
+        e?.response?.data?.message || "Failed loading attendance state",
+        "error"
+      );
     } finally {
       setLoadingState(false);
     }
@@ -33,9 +36,13 @@ export default function CheckInButton() {
     const handleRefresh = () => loadToday();
 
     window.addEventListener("attendance:changed", handleRefresh);
+    window.addEventListener("break:changed", handleRefresh);
+    window.addEventListener("payroll:changed", handleRefresh);
 
     return () => {
       window.removeEventListener("attendance:changed", handleRefresh);
+      window.removeEventListener("break:changed", handleRefresh);
+      window.removeEventListener("payroll:changed", handleRefresh);
     };
   }, [loadToday]);
 
@@ -44,22 +51,13 @@ export default function CheckInButton() {
 
   const disabled = useMemo(() => {
     if (busy || loadingState) return true;
-
-    if (status === "OPEN") return true;
-    if (status === "CLOSED") return true;
-    if (status === "AUTO_CLOSED") return true;
-
-    return false;
+    return status === "OPEN";
   }, [busy, loadingState, status]);
 
   const text = useMemo(() => {
     if (busy) return "Checking in...";
     if (loadingState) return "Loading...";
-
     if (status === "OPEN") return "Already Checked In";
-    if (status === "CLOSED") return "Shift Closed";
-    if (status === "AUTO_CLOSED") return "Shift Auto Closed";
-
     return "Clock In";
   }, [busy, loadingState, status]);
 
@@ -74,6 +72,8 @@ export default function CheckInButton() {
       showToast(res?.message || "Clock-in successful");
 
       window.dispatchEvent(new Event("attendance:changed"));
+      window.dispatchEvent(new Event("break:changed"));
+      window.dispatchEvent(new Event("payroll:changed"));
     } catch (e) {
       showToast(e?.response?.data?.message || "Clock-in failed", "error");
     } finally {
