@@ -523,14 +523,12 @@ export async function getTodayAttendanceForUser(userId) {
        FROM attendance a
        WHERE a.user_id = $1
          AND (
-           -- row kasta oo maanta overlap ku leh
            (
              a.clock_in IS NOT NULL
              AND COALESCE(a.clock_out, a.scheduled_end, NOW()) >= $2
              AND a.clock_in <= $3
            )
            OR
-           -- night shift xalay bilowday oo maanta dhammaanaya
            (
              a.scheduled_start IS NOT NULL
              AND a.scheduled_end IS NOT NULL
@@ -538,7 +536,6 @@ export async function getTodayAttendanceForUser(userId) {
              AND a.scheduled_start <= $3
            )
            OR
-           -- fallback
            (a.created_at BETWEEN $2 AND $3)
          )
      )

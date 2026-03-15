@@ -21,6 +21,7 @@ function getSystemParts(date = new Date()) {
     year: d.getUTCFullYear(),
     month: d.getUTCMonth() + 1,
     day: d.getUTCDate(),
+    weekday: d.getUTCDay(), // 0 Sun ... 6 Sat
   };
 }
 
@@ -67,7 +68,74 @@ function parseTimeParts(timeText, fallbackHour = 0, fallbackMinute = 0) {
   };
 }
 
+function isNightShift(userShift) {
+  const code = String(userShift?.code || "").toUpperCase();
+  const name = String(userShift?.name || "").toUpperCase();
+
+  return code.includes("NIGHT") || name.includes("NIGHT");
+}
+
+function buildNightPolicyShift(anchorDate) {
+  const anchor = startOfSystemDay(anchorDate);
+  const parts = getSystemParts(anchor);
+  const dow = parts.weekday;
+
+  let startHour = 0;
+  let endHour = 8;
+  let endDayOffset = 0;
+
+  if (dow === 6) {
+    // Saturday
+    startHour = 23;
+    endHour = 7;
+    endDayOffset = 1;
+  } else if (dow === 0) {
+    // Sunday
+    startHour = 23;
+    endHour = 8;
+    endDayOffset = 1;
+  } else {
+    // Monday -> Friday
+    startHour = 0;
+    endHour = 8;
+    endDayOffset = 0;
+  }
+
+  const scheduledStart = buildSystemDate(
+    parts.year,
+    parts.month,
+    parts.day,
+    startHour,
+    0,
+    0
+  );
+
+  const endAnchor = addSystemDays(anchor, endDayOffset);
+  const endParts = getSystemParts(endAnchor);
+
+  const scheduledEnd = buildSystemDate(
+    endParts.year,
+    endParts.month,
+    endParts.day,
+    endHour,
+    0,
+    0
+  );
+
+  return {
+    shiftCode: "NIGHT",
+    shiftName: "Night Shift",
+    anchorDate: formatSystemDateISO(anchor),
+    scheduledStart,
+    scheduledEnd,
+  };
+}
+
 function buildShiftFromRow(anchorDate, userShift) {
+  if (isNightShift(userShift)) {
+    return buildNightPolicyShift(anchorDate);
+  }
+
   const anchor = startOfSystemDay(anchorDate);
   const parts = getSystemParts(anchor);
 
@@ -128,7 +196,6 @@ function applyGraceWindow(policy, graceBeforeMinutes, graceAfterMinutes) {
     policy.scheduledStart.getTime() - graceBefore * 60_000
   );
 
-  // SAX: latest clock-in waa start + graceAfter, ma aha shift end
   const latestClockIn = new Date(
     policy.scheduledStart.getTime() + graceAfter * 60_000
   );
@@ -156,8 +223,6 @@ export function resolveShiftPolicyForClockIn({
   const today = startOfSystemDay(now);
   const yesterday = addSystemDays(today, -1);
 
-  // night shift-ka si uu after midnight u shaqeeyo,
-  // waxaan eegaynaa yesterday + today
   const candidates = [
     buildShiftFromRow(yesterday, userShift),
     buildShiftFromRow(today, userShift),
@@ -180,7 +245,7 @@ export function resolveShiftPolicyForClockIn({
     };
   }
 
-  const nearest = withGrace.sort((a, b) => {
+  const nearest = [...withGrace].sort((a, b) => {
     const da = Math.abs(now.getTime() - a.scheduledStart.getTime());
     const db = Math.abs(now.getTime() - b.scheduledStart.getTime());
     return da - db;
@@ -232,8 +297,9 @@ export function calculateLateMinutes({
 
   if (diffMinutes <= 0) return 0;
 
-  // qofku haddii uu ka dambeeyo start-ka, late waa inta uu ka dambeeyo
-  return diffMinutes > graceAfterMinutes ? diffMinutes : diffMinutes;
+  // grace-ka 15m ugu horeeya waa la oggol yahay,
+  // laakiin late record ahaan waan haynaa si report-ku u arko
+  return diffMinutes;
 }
 
 export function getSystemDateISO(date = new Date()) {

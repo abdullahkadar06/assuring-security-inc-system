@@ -7,7 +7,9 @@ export function requireAuth(req, res, next) {
     const [type, token] = header.split(" ");
 
     if (type !== "Bearer" || !token) {
-      return res.status(401).json({ message: "Missing or invalid Authorization header" });
+      return res
+        .status(401)
+        .json({ message: "Missing or invalid Authorization header" });
     }
 
     const payload = jwt.verify(token, env.jwtSecret);

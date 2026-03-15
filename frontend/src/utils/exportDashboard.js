@@ -3,7 +3,9 @@ import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 
 export function exportExcel(data, name = "dashboard") {
-  const safeData = Array.isArray(data) && data.length ? data : [{ message: "No data available" }];
+  const safeData =
+    Array.isArray(data) && data.length ? data : [{ message: "No data available" }];
+
   const ws = XLSX.utils.json_to_sheet(safeData);
   const wb = XLSX.utils.book_new();
 
@@ -12,7 +14,8 @@ export function exportExcel(data, name = "dashboard") {
 }
 
 export function exportPDF(data, name = "dashboard") {
-  const safeData = Array.isArray(data) && data.length ? data : [{ message: "No data available" }];
+  const safeData =
+    Array.isArray(data) && data.length ? data : [{ message: "No data available" }];
 
   const doc = new jsPDF();
   const headers = Object.keys(safeData[0]);

@@ -3,7 +3,6 @@ import cors from "cors";
 import { env } from "./config/env.js";
 import { pool } from "./db/pool.js";
 
-// Routes
 import authRoutes from "./routes/auth.routes.js";
 import usersRoutes from "./routes/users.routes.js";
 import shiftsRoutes from "./routes/shifts.routes.js";
@@ -15,7 +14,6 @@ import reportsRoutes from "./routes/reports.routes.js";
 import dashboardRoutes from "./routes/dashboard.routes.js";
 import adminRoutes from "./routes/admin.routes.js";
 
-// Error middleware
 import { errorHandler } from "./middleware/error.middleware.js";
 import { startAttendanceAutoCloseJob } from "./jobs/attendanceAutoClose.job.js";
 
@@ -28,6 +26,7 @@ app.use(
     origin: [
       "http://localhost:5173",
       "https://assuring-security-inc-system.vercel.app",
+      env.corsOrigin,
     ],
     credentials: true,
   })
@@ -41,7 +40,7 @@ app.get("/api/ping", async (_req, res) => {
   try {
     await pool.query("SELECT 1");
     res.status(200).json({ message: "System is awake and healthy!" });
-  } catch (error) {
+  } catch {
     res.status(500).json({ message: "Database connection error" });
   }
 });

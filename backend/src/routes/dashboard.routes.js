@@ -4,7 +4,6 @@ import { requireAuth } from "../middleware/auth.middleware.js";
 import { requireRole } from "../middleware/requireRole.js";
 import { getTodayAttendanceForUser } from "../services/attendanceEngine.service.js";
 import {
-  FINALIZED_ATTENDANCE_STATUSES,
   SYSTEM_UTC_OFFSET_MINUTES,
   PAID_BREAK_LIMIT_SECONDS,
   MAX_SHIFT_HOURS,
@@ -530,7 +529,7 @@ router.get(
   "/admin/overview",
   requireAuth,
   requireRole("ADMIN"),
-  async (req, res, next) => {
+  async (_req, res, next) => {
     try {
       const liveAbsentToday = await getLiveAbsentDaysForAllUsers(
         startOfSystemDay(new Date()),
@@ -595,7 +594,7 @@ router.get(
   "/admin/weekly",
   requireAuth,
   requireRole("ADMIN"),
-  async (req, res, next) => {
+  async (_req, res, next) => {
     try {
       const now = new Date();
       const { weekStart, weekEnd, effectiveEnd } = getCurrentSaturdayFridayWindow(

@@ -16,10 +16,7 @@ export function startAttendanceAutoCloseJob() {
     }
   };
 
-  // startup-ka markiiba ha baaro records-kii hore overdue u ahaa
   run();
-
-  // kadib 1 minute kasta
   timer = setInterval(run, 60 * 1000);
 
   console.log("🤖 Attendance auto-close job started (every 1 minute)");

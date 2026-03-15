@@ -428,8 +428,8 @@ export default function CompactAnalytics({
                       index % 3 === 0
                         ? "bg-red-500/85"
                         : index % 3 === 1
-                          ? "bg-amber-400/85"
-                          : "bg-emerald-500/85",
+                        ? "bg-amber-400/85"
+                        : "bg-emerald-500/85",
                     ].join(" ")}
                     style={{ height: `${Math.max(14, bar.value)}%` }}
                   />
