@@ -26,7 +26,7 @@ function getSystemParts(date = new Date()) {
     year: d.getUTCFullYear(),
     month: d.getUTCMonth() + 1,
     day: d.getUTCDate(),
-    weekday: d.getUTCDay(), // 0 Sun ... 6 Sat
+    weekday: d.getUTCDay(),
   };
 }
 

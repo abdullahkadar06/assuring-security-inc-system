@@ -523,11 +523,23 @@ export async function getTodayAttendanceForUser(userId) {
        FROM attendance a
        WHERE a.user_id = $1
          AND (
-           (a.scheduled_start IS NOT NULL AND a.scheduled_start BETWEEN $2 AND $3)
+           -- row kasta oo maanta overlap ku leh
+           (
+             a.clock_in IS NOT NULL
+             AND COALESCE(a.clock_out, a.scheduled_end, NOW()) >= $2
+             AND a.clock_in <= $3
+           )
            OR
+           -- night shift xalay bilowday oo maanta dhammaanaya
+           (
+             a.scheduled_start IS NOT NULL
+             AND a.scheduled_end IS NOT NULL
+             AND a.scheduled_end >= $2
+             AND a.scheduled_start <= $3
+           )
+           OR
+           -- fallback
            (a.created_at BETWEEN $2 AND $3)
-           OR
-           (a.clock_in BETWEEN $2 AND $3)
          )
      )
      SELECT
@@ -544,7 +556,8 @@ export async function getTodayAttendanceForUser(userId) {
                        0,
                        EXTRACT(
                          EPOCH FROM (
-                           LEAST(COALESCE(br.break_end, b.effective_clock_out), b.effective_clock_out) - br.break_start
+                           LEAST(COALESCE(br.break_end, b.effective_clock_out), b.effective_clock_out)
+                           - br.break_start
                          )
                        )
                      )
@@ -576,7 +589,8 @@ export async function getTodayAttendanceForUser(userId) {
                            0,
                            EXTRACT(
                              EPOCH FROM (
-                               LEAST(COALESCE(br.break_end, b.effective_clock_out), b.effective_clock_out) - br.break_start
+                               LEAST(COALESCE(br.break_end, b.effective_clock_out), b.effective_clock_out)
+                               - br.break_start
                              )
                            )
                          )
@@ -602,7 +616,8 @@ export async function getTodayAttendanceForUser(userId) {
                  0,
                  EXTRACT(
                    EPOCH FROM (
-                     LEAST(COALESCE(br.break_end, b.effective_clock_out), b.effective_clock_out) - br.break_start
+                     LEAST(COALESCE(br.break_end, b.effective_clock_out), b.effective_clock_out)
+                     - br.break_start
                    )
                  )
                )
@@ -617,7 +632,7 @@ export async function getTodayAttendanceForUser(userId) {
          0
        ) AS break_minutes
      FROM base b
-     ORDER BY b.id DESC`,
+     ORDER BY COALESCE(b.clock_in, b.created_at) DESC, b.id DESC`,
     [userId, start, end, MAX_SHIFT_HOURS, PAID_BREAK_LIMIT_SECONDS]
   );
 
