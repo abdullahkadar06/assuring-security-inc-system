@@ -51,17 +51,17 @@ function getSystemDayBounds(date = new Date()) {
 async function getUserShift(client, userId) {
   const r = await client.query(
     `SELECT
-        u.id as user_id,
+        u.id AS user_id,
         u.shift_id,
         u.is_active,
         u.hourly_rate,
         s.code,
         s.name,
-        s.start_time::text as start_time,
-        s.end_time::text as end_time,
+        s.start_time::text AS start_time,
+        s.end_time::text AS end_time,
         s.grace_before_minutes,
         s.grace_after_minutes,
-        s.is_active as shift_active
+        s.is_active AS shift_active
      FROM users u
      LEFT JOIN shifts s ON s.id = u.shift_id
      WHERE u.id = $1`,
@@ -87,8 +87,10 @@ async function getOpenAttendance(client, userId) {
         COALESCE(u.hourly_rate, 0) AS hourly_rate,
         COALESCE(s.grace_after_minutes, $3) AS grace_after_minutes
      FROM attendance a
-     JOIN users u ON u.id = a.user_id
-     LEFT JOIN shifts s ON s.id = a.shift_id
+     JOIN users u
+       ON u.id = a.user_id
+     LEFT JOIN shifts s
+       ON s.id = a.shift_id
      WHERE a.user_id = $1
        AND a.status = $2
      ORDER BY a.id DESC
@@ -126,12 +128,15 @@ function resolveAutoClockOutTime(attendance, forcedClockOutAt = null) {
 export function calculateAttendanceMetrics({
   clockIn,
   clockOut,
+  scheduledStart = null,
   breakSeconds = 0,
   paidBreakLimitSeconds = PAID_BREAK_LIMIT_SECONDS,
   maxPaidShiftHours = MAX_SHIFT_HOURS,
+  lateGraceMinutes = 15,
 }) {
   const inAt = safeDate(clockIn);
   const outAt = safeDate(clockOut);
+  const scheduled = safeDate(scheduledStart);
 
   if (!inAt || !outAt) {
     return {
@@ -139,7 +144,9 @@ export function calculateAttendanceMetrics({
       breakSeconds: 0,
       unpaidBreakSeconds: 0,
       workedSeconds: 0,
+      payableWorkSecondsBeforeCap: 0,
       paidSeconds: 0,
+      lateDeductionSeconds: 0,
       totalHours: 0,
       paidHours: 0,
     };
@@ -151,22 +158,46 @@ export function calculateAttendanceMetrics({
   );
 
   const normalizedBreakSeconds = Math.max(0, Number(breakSeconds || 0));
+
+  // 30m ka badan oo keliya ha noqdo unpaid
   const unpaidBreakSeconds = Math.max(
     0,
     normalizedBreakSeconds - paidBreakLimitSeconds
   );
 
+  // worked = raw - break oo dhan
   const workedSeconds = Math.max(0, rawSeconds - normalizedBreakSeconds);
-  const paidSeconds = Math.max(0, rawSeconds - unpaidBreakSeconds);
+
+  // paid work before lateness cap = raw - unpaid break only
+  const payableWorkSecondsBeforeCap = Math.max(0, rawSeconds - unpaidBreakSeconds);
+
+  // 15m ugu horeeya daahitaanka yaan laga jarin lacagta
+  let lateDeductionSeconds = 0;
+
+  if (scheduled && inAt.getTime() > scheduled.getTime()) {
+    const lateSeconds = Math.floor((inAt.getTime() - scheduled.getTime()) / 1000);
+    const graceSeconds = Math.max(0, Number(lateGraceMinutes || 0) * 60);
+
+    lateDeductionSeconds = Math.max(0, lateSeconds - graceSeconds);
+  }
+
+  const paidSeconds = Math.max(
+    0,
+    payableWorkSecondsBeforeCap - lateDeductionSeconds
+  );
 
   return {
     rawSeconds,
     breakSeconds: normalizedBreakSeconds,
     unpaidBreakSeconds,
     workedSeconds,
+    payableWorkSecondsBeforeCap,
     paidSeconds,
+    lateDeductionSeconds,
     totalHours: roundHours(workedSeconds / 3600),
-    paidHours: roundHours(Math.min(maxPaidShiftHours, paidSeconds / 3600)),
+    paidHours: roundHours(
+      Math.min(maxPaidShiftHours, paidSeconds / 3600)
+    ),
   };
 }
 
@@ -422,9 +453,11 @@ export async function clockOutUser({
     const metrics = calculateAttendanceMetrics({
       clockIn: attendance.clock_in,
       clockOut,
+      scheduledStart: attendance.scheduled_start,
       breakSeconds,
       paidBreakLimitSeconds: PAID_BREAK_LIMIT_SECONDS,
       maxPaidShiftHours: MAX_SHIFT_HOURS,
+      lateGraceMinutes: attendance.grace_after_minutes,
     });
 
     const newStatus = isAuto
@@ -480,6 +513,7 @@ export async function clockOutUser({
         paid_hours: metrics.paidHours,
         break_seconds: metrics.breakSeconds,
         unpaid_break_seconds: metrics.unpaidBreakSeconds,
+        late_deduction_seconds: metrics.lateDeductionSeconds,
         paid_break_limit_seconds: PAID_BREAK_LIMIT_SECONDS,
         total_pay: payroll.total_pay,
         closed_at: clockOut,
@@ -653,7 +687,8 @@ export async function autoCloseDueAttendances() {
         a.scheduled_end,
         COALESCE(s.grace_after_minutes, $2) AS grace_after_minutes
      FROM attendance a
-     LEFT JOIN shifts s ON s.id = a.shift_id
+     LEFT JOIN shifts s
+       ON s.id = a.shift_id
      WHERE a.status = $1
        AND a.scheduled_end IS NOT NULL
        AND NOW() >= (
