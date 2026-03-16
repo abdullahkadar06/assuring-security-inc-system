@@ -31,14 +31,14 @@ export function formatBreakMinutesPrecise(totalMinutes = 0) {
   const seconds = totalSeconds % 60;
 
   if (hours > 0) {
-    if (minutes === 0 && seconds === 0) return `${hours}h`;
-    if (seconds === 0) return `${hours}h ${minutes}m`;
-    return `${hours}h ${minutes}m ${seconds}s`;
+    if (minutes <= 0 && seconds <= 0) return `${hours}h`;
+    if (seconds <= 0) return `${hours}h ${minutes}m`;
+    return `${hours}h ${minutes}m ${pad2(seconds)}s`;
   }
 
   if (minutes > 0) {
-    if (seconds === 0) return `${minutes}m`;
-    return `${minutes}m ${seconds}s`;
+    if (seconds <= 0) return `${minutes}m`;
+    return `${minutes}m ${pad2(seconds)}s`;
   }
 
   return `${seconds}s`;
@@ -50,6 +50,34 @@ export function formatHours(value = 0) {
 
 export function formatMoney(value = 0, currency = "$") {
   return `${currency}${Number(value ?? 0).toFixed(2)}`;
+}
+
+export function formatDateCompact(value) {
+  if (!value) return "—";
+
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "—";
+
+  return d.toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "2-digit",
+  });
+}
+
+export function formatDateTimeCompact(value) {
+  if (!value) return "—";
+
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "—";
+
+  return d.toLocaleString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 export function isStandardEmail(value = "") {

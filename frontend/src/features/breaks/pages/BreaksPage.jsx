@@ -7,7 +7,10 @@ import { breaksApi } from "../../../api/breaks.api";
 import { dashboardApi } from "../../../api/dashboard.api";
 import { useUiStore } from "../../../state/ui/ui.store";
 import { useNow } from "../../../hooks/useNow";
-import { formatDuration, toMs } from "../../../utils/format";
+import {
+  formatBreakMinutesPrecise,
+  toMs,
+} from "../../../utils/format";
 
 function getLatestStatus(rows = []) {
   return rows?.[0]?.status || "NONE";
@@ -75,9 +78,19 @@ export default function BreaksPage() {
   const hasOpenAttendance = latestStatus === "OPEN";
   const isOnBreak = Boolean(breakStartISO);
 
-  const breakElapsed = breakStartISO
-    ? formatDuration(now - toMs(breakStartISO))
-    : "00:00:00";
+  const breakElapsedMinutes = useMemo(() => {
+    if (!breakStartISO) return 0;
+
+    const startedAtMs = toMs(breakStartISO);
+    if (!startedAtMs) return 0;
+
+    const diffMs = Math.max(0, now - startedAtMs);
+    return diffMs / 60000;
+  }, [breakStartISO, now]);
+
+  const breakElapsed = isOnBreak
+    ? formatBreakMinutesPrecise(breakElapsedMinutes)
+    : "Not on break";
 
   const startDisabled = useMemo(() => {
     if (busy || loadingState) return true;
@@ -162,9 +175,7 @@ export default function BreaksPage() {
         </div>
 
         <div className="rounded-2xl border border-brand-line/70 bg-brand-bg/35 p-4">
-          <div className="text-3xl font-bold text-white">
-            {isOnBreak ? breakElapsed : "Not on break"}
-          </div>
+          <div className="text-3xl font-bold text-white">{breakElapsed}</div>
           <div className="mt-2 text-sm text-brand-text/60">
             {!hasOpenAttendance
               ? "Clock in first before starting a break."

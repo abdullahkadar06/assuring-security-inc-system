@@ -33,6 +33,36 @@ function getLatestAttendance(rows = []) {
   return rows?.[0] || null;
 }
 
+function getStatusBadgeClass(status) {
+  const normalized = String(status || "OFF_DUTY").toUpperCase();
+
+  if (normalized === "OPEN") {
+    return "border-emerald-500/20 bg-emerald-500/10 text-emerald-300";
+  }
+
+  if (normalized === "AUTO_CLOSED") {
+    return "border-brand-blue/25 bg-brand-blue/10 text-brand-blue";
+  }
+
+  if (normalized === "CLOSED") {
+    return "border-brand-blue/25 bg-brand-blue/10 text-brand-blue";
+  }
+
+  return "border-brand-line/70 bg-brand-bg/30 text-brand-text/75";
+}
+
+function formatStatusLabel(status) {
+  const raw = String(status || "Off Duty").trim();
+
+  if (!raw) return "Off Duty";
+
+  return raw
+    .toLowerCase()
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
 export default function DashboardPage() {
   const showToast = useUiStore((s) => s.showToast);
   const { isAdmin } = useRole();
@@ -53,7 +83,7 @@ export default function DashboardPage() {
         dashboardApi.meWeekly(),
       ]);
 
-      setToday(t?.today || []);
+      setToday(Array.isArray(t?.today) ? t.today.slice(0, 1) : []);
       setWeekly(w || null);
 
       if (isAdmin) {
@@ -99,8 +129,10 @@ export default function DashboardPage() {
   const latest = useMemo(() => getLatestAttendance(today), [today]);
   const shiftText = formatUserShift(user, new Date());
 
-  const currentStatus =
+  const currentStatusRaw =
     latest?.status && latest.status !== "NONE" ? latest.status : "Off Duty";
+
+  const currentStatus = formatStatusLabel(currentStatusRaw);
 
   const paidHours = Number(latest?.paid_hours ?? 0);
   const breakTodayMinutes = Number(latest?.break_minutes ?? 0);
@@ -111,22 +143,30 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-4">
-      <div className="mb-2">
-        <h1 className="mb-3 text-xl font-bold text-white">
+      <div className="mb-2 space-y-3">
+        <h1 className="text-xl font-bold text-white">
           Welcome, {user?.full_name?.split(" ")[0] || "User"} 👋
         </h1>
 
-        <div className="flex items-center justify-between rounded-2xl border border-brand-blue/30 bg-brand-blue/10 p-4">
-          <div>
+        <div className="flex items-center justify-between rounded-2xl border border-brand-blue/30 bg-brand-blue/10 p-4 shadow-lg shadow-brand-blue/5">
+          <div className="min-w-0">
             <div className="mb-1 text-sm font-semibold text-brand-blue">
               Your Shift Today
             </div>
-            <div className="text-lg font-bold text-white">{shiftText}</div>
+            <div className="truncate text-lg font-bold text-white">{shiftText}</div>
           </div>
 
-          <div className="rounded-xl bg-brand-blue/20 p-2 text-brand-blue">
+          <div className="rounded-2xl border border-brand-blue/20 bg-brand-blue/15 p-3 text-brand-blue">
             <SunMoon size={24} />
           </div>
+        </div>
+
+        <div
+          className={`inline-flex items-center rounded-xl border px-3 py-1.5 text-xs font-semibold ${getStatusBadgeClass(
+            currentStatusRaw
+          )}`}
+        >
+          Current Status: {currentStatus}
         </div>
       </div>
 
@@ -138,53 +178,65 @@ export default function DashboardPage() {
         />
 
         <StatCard
-          title="Paid hours"
+          title="Paid Hours"
           value={`${formatHours(paidHours)}h`}
           icon={<Wallet size={20} />}
         />
 
         <div className="col-span-2">
           <StatCard
-            title="Break today"
+            title="Break Today"
             value={formatBreakMinutesPrecise(breakTodayMinutes)}
             icon={<Coffee size={20} />}
           />
         </div>
       </div>
 
-      <Card className="overflow-hidden">
-        <div className="flex items-center gap-2 text-sm font-semibold text-brand-text/70">
+      <Card className="overflow-hidden space-y-4">
+        <div className="flex items-center gap-2 text-sm font-semibold text-brand-text/75">
           <CalendarRange size={16} className="text-brand-blue" />
           <span>This Week (SAT → FRI)</span>
         </div>
 
-        <div className="mt-4 grid grid-cols-2 gap-x-6 gap-y-4 text-sm">
-          <div className="flex items-center gap-2">
-            <BadgeDollarSign size={16} className="text-emerald-400" />
-            <span>
-              Paid: <b>{formatHours(weekly?.summary?.paid_hours ?? 0)}h</b>
-            </span>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="rounded-2xl border border-brand-line/60 bg-brand-bg/25 p-4 text-sm">
+            <div className="flex items-center gap-2 text-brand-text/60">
+              <BadgeDollarSign size={16} className="text-emerald-400" />
+              <span>Paid Hours</span>
+            </div>
+            <div className="mt-2 text-lg font-semibold text-white">
+              {formatHours(weekly?.summary?.paid_hours ?? 0)}h
+            </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <CircleX size={16} className="text-red-400" />
-            <span>
-              Absent: <b>{formatDays(weekly?.summary?.absent_days ?? 0)}</b>
-            </span>
+          <div className="rounded-2xl border border-brand-line/60 bg-brand-bg/25 p-4 text-sm">
+            <div className="flex items-center gap-2 text-brand-text/60">
+              <CircleX size={16} className="text-red-400" />
+              <span>Absent Days</span>
+            </div>
+            <div className="mt-2 text-lg font-semibold text-white">
+              {formatDays(weekly?.summary?.absent_days ?? 0)}
+            </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <BriefcaseBusiness size={16} className="text-amber-300" />
-            <span>
-              Worked: <b>{formatHours(weekly?.summary?.worked_net_hours ?? 0)}h</b>
-            </span>
+          <div className="rounded-2xl border border-brand-line/60 bg-brand-bg/25 p-4 text-sm">
+            <div className="flex items-center gap-2 text-brand-text/60">
+              <BriefcaseBusiness size={16} className="text-amber-300" />
+              <span>Worked Hours</span>
+            </div>
+            <div className="mt-2 text-lg font-semibold text-white">
+              {formatHours(weekly?.summary?.worked_net_hours ?? 0)}h
+            </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <Landmark size={16} className="text-brand-blue" />
-            <span>
-              Total pay: <b>{formatMoney(weekly?.summary?.total_pay ?? 0)}</b>
-            </span>
+          <div className="rounded-2xl border border-brand-line/60 bg-brand-bg/25 p-4 text-sm">
+            <div className="flex items-center gap-2 text-brand-text/60">
+              <Landmark size={16} className="text-brand-blue" />
+              <span>Total Pay</span>
+            </div>
+            <div className="mt-2 text-lg font-semibold text-white">
+              {formatMoney(weekly?.summary?.total_pay ?? 0)}
+            </div>
           </div>
         </div>
       </Card>
