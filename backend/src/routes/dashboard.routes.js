@@ -4,11 +4,9 @@ import { requireAuth } from "../middleware/auth.middleware.js";
 import { requireRole } from "../middleware/requireRole.js";
 import { getTodayAttendanceForUser } from "../services/attendanceEngine.service.js";
 import {
-  FINALIZED_ATTENDANCE_STATUSES,
   SYSTEM_UTC_OFFSET_MINUTES,
   PAID_BREAK_LIMIT_SECONDS,
   MAX_SHIFT_HOURS,
-  DEFAULT_GRACE_AFTER_MINUTES,
 } from "../constants/attendancePolicy.constants.js";
 
 const router = Router();
@@ -29,7 +27,8 @@ function getSystemParts(date = new Date()) {
     year: d.getUTCFullYear(),
     month: d.getUTCMonth() + 1,
     day: d.getUTCDate(),
-    weekday: d.getUTCDay(),
+    weekday: d.getUTCDay(), // 0=Sun ... 6=Sat
+    hour: d.getUTCHours(),
   };
 }
 
@@ -56,6 +55,10 @@ function getSystemDateISO(date = new Date()) {
   ).padStart(2, "0")}`;
 }
 
+function minDate(a, b) {
+  return a.getTime() <= b.getTime() ? a : b;
+}
+
 function getCurrentSaturdayFridayWindow(today = new Date()) {
   const dayStart = startOfSystemDay(today);
   const p = getSystemParts(dayStart);
@@ -64,21 +67,18 @@ function getCurrentSaturdayFridayWindow(today = new Date()) {
   const weekStart = addSystemDays(dayStart, -daysSinceSaturday);
   const weekEnd = addSystemDays(weekStart, 6);
 
-  return { weekStart, weekEnd, effectiveEnd: dayStart };
-}
-
-function minDate(a, b) {
-  return a.getTime() <= b.getTime() ? a : b;
+  return {
+    weekStart,
+    weekEnd,
+    effectiveEnd: minDate(dayStart, today),
+  };
 }
 
 function getShiftKind(userShift) {
   const code = String(userShift?.code || "").toUpperCase();
   const name = String(userShift?.name || "").toUpperCase();
 
-  if (code.includes("NIGHT") || name.includes("NIGHT")) {
-    return "NIGHT";
-  }
-
+  if (code.includes("NIGHT") || name.includes("NIGHT")) return "NIGHT";
   return "MORNING";
 }
 
@@ -106,9 +106,13 @@ function makeDate(baseDate, hour, minute = 0, second = 0) {
   );
 }
 
+// User policy:
+// Saturday night: 23:00 -> 07:00
+// Sunday night:   23:00 -> 08:00
+// Monday-Friday night: 00:00 -> 08:00
 function resolvePolicyForAnchorDate(anchorDate, shiftKind) {
   const anchor = startOfDay(anchorDate);
-  const dow = anchor.getDay();
+  const dow = anchor.getDay(); // 0=Sun ... 6=Sat
 
   if (shiftKind === "MORNING") {
     return {
@@ -183,9 +187,7 @@ async function getLiveAbsentDaysForUser(userId, weekStart, effectiveEnd) {
   }
 
   const shiftKind = getShiftKind(shiftMeta);
-  const graceAfter = Number(
-    shiftMeta.grace_after_minutes ?? DEFAULT_GRACE_AFTER_MINUTES
-  );
+  const graceAfter = Number(shiftMeta.grace_after_minutes ?? 15);
   const now = new Date();
 
   const weekStartISO = getSystemDateISO(weekStart);
@@ -264,9 +266,8 @@ router.get("/me/today", requireAuth, async (req, res, next) => {
 router.get("/me/weekly", requireAuth, async (req, res, next) => {
   try {
     const now = new Date();
-    const { weekStart, weekEnd, effectiveEnd } = getCurrentSaturdayFridayWindow(
-      now
-    );
+    const { weekStart, weekEnd, effectiveEnd } =
+      getCurrentSaturdayFridayWindow(now);
 
     const weekStartISO = getSystemDateISO(weekStart);
     const effectiveEndISO = getSystemDateISO(minDate(effectiveEnd, now));
@@ -281,7 +282,6 @@ router.get("/me/weekly", requireAuth, async (req, res, next) => {
            a.scheduled_start,
            a.clock_in,
            a.clock_out,
-           a.scheduled_end,
            CASE
              WHEN a.status IN ('CLOSED', 'AUTO_CLOSED') AND a.clock_out IS NOT NULL
                THEN a.clock_out
@@ -291,13 +291,9 @@ router.get("/me/weekly", requireAuth, async (req, res, next) => {
                THEN NOW()
              ELSE a.clock_out
            END AS effective_clock_out,
-           COALESCE(u.hourly_rate, 0) AS hourly_rate,
-           COALESCE(s.grace_after_minutes, $6) AS grace_after_minutes
+           COALESCE(u.hourly_rate, 0) AS hourly_rate
          FROM attendance a
-         JOIN users u
-           ON u.id = a.user_id
-         LEFT JOIN shifts s
-           ON s.id = a.shift_id
+         JOIN users u ON u.id = a.user_id
          WHERE a.user_id = $1
            AND a.status IN ('OPEN', 'CLOSED', 'AUTO_CLOSED')
            AND a.scheduled_start IS NOT NULL
@@ -328,8 +324,7 @@ router.get("/me/weekly", requireAuth, async (req, res, next) => {
                AND b.break_start IS NOT NULL
                AND b.break_start < ab.effective_clock_out
            ), 0) AS break_seconds,
-           ab.hourly_rate,
-           ab.grace_after_minutes
+           ab.hourly_rate
          FROM att_base ab
        ),
        final_rows AS (
@@ -352,11 +347,6 @@ router.get("/me/weekly", requireAuth, async (req, res, next) => {
                    0,
                    EXTRACT(EPOCH FROM (ac.effective_clock_out - ac.clock_in))
                    - GREATEST(0, ac.break_seconds - $5)
-                   - GREATEST(
-                       0,
-                       EXTRACT(EPOCH FROM (ac.clock_in - ac.scheduled_start))
-                       - (ac.grace_after_minutes * 60)
-                     )
                  ) / 3600.0
                )
              )::numeric,
@@ -372,11 +362,6 @@ router.get("/me/weekly", requireAuth, async (req, res, next) => {
                      0,
                      EXTRACT(EPOCH FROM (ac.effective_clock_out - ac.clock_in))
                      - GREATEST(0, ac.break_seconds - $5)
-                     - GREATEST(
-                         0,
-                         EXTRACT(EPOCH FROM (ac.clock_in - ac.scheduled_start))
-                         - (ac.grace_after_minutes * 60)
-                       )
                    ) / 3600.0
                  )
                ) * ac.hourly_rate
@@ -398,7 +383,6 @@ router.get("/me/weekly", requireAuth, async (req, res, next) => {
         effectiveEndISO,
         MAX_SHIFT_HOURS,
         PAID_BREAK_LIMIT_SECONDS,
-        DEFAULT_GRACE_AFTER_MINUTES,
       ]
     );
 
@@ -412,7 +396,6 @@ router.get("/me/weekly", requireAuth, async (req, res, next) => {
            a.status,
            a.scheduled_start,
            a.scheduled_end,
-           COALESCE(s.grace_after_minutes, $6) AS grace_after_minutes,
            CASE
              WHEN a.status IN ('CLOSED', 'AUTO_CLOSED') AND a.clock_out IS NOT NULL
                THEN a.clock_out
@@ -423,8 +406,6 @@ router.get("/me/weekly", requireAuth, async (req, res, next) => {
              ELSE a.clock_out
            END AS effective_clock_out
          FROM attendance a
-         LEFT JOIN shifts s
-           ON s.id = a.shift_id
          WHERE a.user_id = $1
            AND a.status IN ('OPEN', 'CLOSED', 'AUTO_CLOSED')
            AND a.scheduled_start IS NOT NULL
@@ -486,11 +467,6 @@ router.get("/me/weekly", requireAuth, async (req, res, next) => {
                          AND b.break_start < ab.effective_clock_out
                      ), 0) - $5
                    )
-                 - GREATEST(
-                     0,
-                     EXTRACT(EPOCH FROM (ab.clock_in - ab.scheduled_start))
-                     - (ab.grace_after_minutes * 60)
-                   )
                ) / 3600.0
              )
            )::numeric,
@@ -522,7 +498,6 @@ router.get("/me/weekly", requireAuth, async (req, res, next) => {
         effectiveEndISO,
         MAX_SHIFT_HOURS,
         PAID_BREAK_LIMIT_SECONDS,
-        DEFAULT_GRACE_AFTER_MINUTES,
       ]
     );
 
@@ -626,9 +601,8 @@ router.get(
   async (req, res, next) => {
     try {
       const now = new Date();
-      const { weekStart, weekEnd, effectiveEnd } = getCurrentSaturdayFridayWindow(
-        now
-      );
+      const { weekStart, weekEnd, effectiveEnd } =
+        getCurrentSaturdayFridayWindow(now);
 
       const weekStartISO = getSystemDateISO(weekStart);
       const effectiveEndISO = getSystemDateISO(minDate(effectiveEnd, now));
@@ -646,7 +620,6 @@ router.get(
              a.scheduled_end,
              a.late_minutes,
              COALESCE(u.hourly_rate, 0) AS hourly_rate,
-             COALESCE(s.grace_after_minutes, $5) AS grace_after_minutes,
              CASE
                WHEN a.status IN ('CLOSED', 'AUTO_CLOSED') AND a.clock_out IS NOT NULL
                  THEN a.clock_out
@@ -657,10 +630,7 @@ router.get(
                ELSE a.clock_out
              END AS effective_clock_out
            FROM attendance a
-           JOIN users u
-             ON u.id = a.user_id
-           LEFT JOIN shifts s
-             ON s.id = a.shift_id
+           JOIN users u ON u.id = a.user_id
            WHERE a.status IN ('OPEN', 'CLOSED', 'AUTO_CLOSED')
              AND a.scheduled_start IS NOT NULL
              AND a.scheduled_start::date BETWEEN $1::date AND $2::date
@@ -671,11 +641,6 @@ router.get(
              ab.user_id,
              ab.status,
              ab.late_minutes,
-             ab.clock_in,
-             ab.scheduled_start,
-             ab.effective_clock_out,
-             ab.hourly_rate,
-             ab.grace_after_minutes,
              COALESCE((
                SELECT SUM(
                  GREATEST(
@@ -691,7 +656,10 @@ router.get(
                WHERE b.attendance_id = ab.id
                  AND b.break_start IS NOT NULL
                  AND b.break_start < ab.effective_clock_out
-             ), 0) AS break_seconds
+             ), 0) AS break_seconds,
+             ab.clock_in,
+             ab.effective_clock_out,
+             ab.hourly_rate
            FROM att_base ab
          ),
          final_rows AS (
@@ -714,11 +682,6 @@ router.get(
                      0,
                      EXTRACT(EPOCH FROM (ac.effective_clock_out - ac.clock_in))
                      - GREATEST(0, ac.break_seconds - $4)
-                     - GREATEST(
-                         0,
-                         EXTRACT(EPOCH FROM (ac.clock_in - ac.scheduled_start))
-                         - (ac.grace_after_minutes * 60)
-                       )
                    ) / 3600.0
                  )
                )::numeric,
@@ -733,11 +696,6 @@ router.get(
                        0,
                        EXTRACT(EPOCH FROM (ac.effective_clock_out - ac.clock_in))
                        - GREATEST(0, ac.break_seconds - $4)
-                       - GREATEST(
-                           0,
-                           EXTRACT(EPOCH FROM (ac.clock_in - ac.scheduled_start))
-                           - (ac.grace_after_minutes * 60)
-                         )
                      ) / 3600.0
                    )
                  ) * ac.hourly_rate
@@ -757,7 +715,6 @@ router.get(
           effectiveEndISO,
           MAX_SHIFT_HOURS,
           PAID_BREAK_LIMIT_SECONDS,
-          DEFAULT_GRACE_AFTER_MINUTES,
         ]
       );
 
