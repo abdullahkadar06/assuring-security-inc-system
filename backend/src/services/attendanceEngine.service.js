@@ -48,20 +48,30 @@ function getSystemDayBounds(date = new Date()) {
   return { start, end };
 }
 
+function roundHours(value) {
+  return Number(Number(value || 0).toFixed(2));
+}
+
+function safeDate(value) {
+  if (!value) return null;
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
 async function getUserShift(client, userId) {
   const r = await client.query(
     `SELECT
-        u.id as user_id,
+        u.id AS user_id,
         u.shift_id,
         u.is_active,
         u.hourly_rate,
         s.code,
         s.name,
-        s.start_time::text as start_time,
-        s.end_time::text as end_time,
+        s.start_time::text AS start_time,
+        s.end_time::text AS end_time,
         s.grace_before_minutes,
         s.grace_after_minutes,
-        s.is_active as shift_active
+        s.is_active AS shift_active
      FROM users u
      LEFT JOIN shifts s ON s.id = u.shift_id
      WHERE u.id = $1`,
@@ -99,28 +109,69 @@ async function getOpenAttendance(client, userId) {
   return r.rowCount ? r.rows[0] : null;
 }
 
-function roundHours(value) {
-  return Number(Number(value || 0).toFixed(2));
-}
+async function getOpenAttendanceWithBreak(client, userId) {
+  const r = await client.query(
+    `SELECT
+        a.id,
+        a.user_id,
+        a.shift_id,
+        a.clock_in,
+        a.clock_out,
+        a.total_hours,
+        a.paid_hours,
+        a.status,
+        a.scheduled_start,
+        a.scheduled_end,
+        COALESCE(u.hourly_rate, 0) AS hourly_rate,
+        COALESCE(s.grace_after_minutes, $3) AS grace_after_minutes,
+        cb.break_id AS current_break_id,
+        cb.break_start AS current_break_start
+     FROM attendance a
+     JOIN users u ON u.id = a.user_id
+     LEFT JOIN shifts s ON s.id = a.shift_id
+     LEFT JOIN LATERAL (
+       SELECT
+         b.id AS break_id,
+         b.break_start
+       FROM breaks b
+       WHERE b.attendance_id = a.id
+         AND b.break_end IS NULL
+       ORDER BY b.id DESC
+       LIMIT 1
+     ) cb ON TRUE
+     WHERE a.user_id = $1
+       AND a.status = $2
+     ORDER BY a.id DESC
+     LIMIT 1`,
+    [userId, ATTENDANCE_STATUS.OPEN, DEFAULT_GRACE_AFTER_MINUTES]
+  );
 
-function safeDate(value) {
-  if (!value) return null;
-  const d = new Date(value);
-  return Number.isNaN(d.getTime()) ? null : d;
+  return r.rowCount ? r.rows[0] : null;
 }
 
 function resolveAutoClockOutTime(attendance, forcedClockOutAt = null) {
+  const clockIn = safeDate(attendance?.clock_in);
   const scheduledEnd = safeDate(attendance?.scheduled_end);
   const forced = safeDate(forcedClockOutAt);
 
+  let candidate = null;
+
   if (scheduledEnd && forced) {
-    return forced.getTime() <= scheduledEnd.getTime() ? forced : scheduledEnd;
+    candidate =
+      forced.getTime() <= scheduledEnd.getTime() ? forced : scheduledEnd;
+  } else if (scheduledEnd) {
+    candidate = scheduledEnd;
+  } else if (forced) {
+    candidate = forced;
+  } else {
+    candidate = new Date();
   }
 
-  if (scheduledEnd) return scheduledEnd;
-  if (forced) return forced;
+  if (clockIn && candidate.getTime() < clockIn.getTime()) {
+    return clockIn;
+  }
 
-  return new Date();
+  return candidate;
 }
 
 export function calculateAttendanceMetrics({
@@ -182,17 +233,38 @@ async function closeAnyOpenBreaks(client, attendanceId, closedAt = null) {
   );
 }
 
-async function getBreakSeconds(client, attendanceId) {
+async function getBreakSeconds(
+  client,
+  attendanceId,
+  attendanceClockIn,
+  attendanceClockOut
+) {
+  const clockIn = safeDate(attendanceClockIn);
+  const clockOut = safeDate(attendanceClockOut);
+
+  if (!clockIn || !clockOut) return 0;
+
   const breakResult = await client.query(
     `SELECT COALESCE(
-        SUM(EXTRACT(EPOCH FROM (break_end - break_start))),
+        SUM(
+          GREATEST(
+            0,
+            EXTRACT(
+              EPOCH FROM (
+                LEAST(b.break_end, $2::timestamp)
+                - GREATEST(b.break_start, $3::timestamp)
+              )
+            )
+          )
+        ),
         0
       ) AS break_seconds
-     FROM breaks
-     WHERE attendance_id = $1
-       AND break_start IS NOT NULL
-       AND break_end IS NOT NULL`,
-    [attendanceId]
+     FROM breaks b
+     WHERE b.attendance_id = $1
+       AND b.break_start IS NOT NULL
+       AND b.break_end IS NOT NULL
+       AND GREATEST(b.break_start, $3::timestamp) < LEAST(b.break_end, $2::timestamp)`,
+    [attendanceId, clockOut, clockIn]
   );
 
   return Number(breakResult.rows[0]?.break_seconds ?? 0);
@@ -392,6 +464,7 @@ export async function clockOutUser({
   actorUserId,
   isAuto = false,
   forcedClockOutAt = null,
+  closeReason = null,
 }) {
   const client = await pool.connect();
 
@@ -417,7 +490,12 @@ export async function clockOutUser({
 
     await closeAnyOpenBreaks(client, attendanceId, clockOut);
 
-    const breakSeconds = await getBreakSeconds(client, attendanceId);
+    const breakSeconds = await getBreakSeconds(
+      client,
+      attendanceId,
+      attendance.clock_in,
+      clockOut
+    );
 
     const metrics = calculateAttendanceMetrics({
       clockIn: attendance.clock_in,
@@ -467,15 +545,17 @@ export async function clockOutUser({
 
     await client.query("COMMIT");
 
+    const resolvedCloseReason = isAuto
+      ? closeReason || CLOSE_REASON.AUTO_SHIFT_CLOSE
+      : CLOSE_REASON.MANUAL;
+
     await auditLog({
       actor_user_id: actorUserId,
       action: isAuto ? "AUTO_CLOCK_OUT" : "CLOCK_OUT",
       entity: "attendance",
       entity_id: attendanceId,
       meta: {
-        close_reason: isAuto
-          ? CLOSE_REASON.AUTO_SHIFT_CLOSE
-          : CLOSE_REASON.MANUAL,
+        close_reason: resolvedCloseReason,
         total_hours: metrics.totalHours,
         paid_hours: metrics.paidHours,
         break_seconds: metrics.breakSeconds,
@@ -504,6 +584,72 @@ export async function clockOutUser({
   }
 }
 
+export async function enforceAutoCloseForUser(userId) {
+  const client = await pool.connect();
+
+  try {
+    const row = await getOpenAttendanceWithBreak(client, userId);
+
+    if (!row) {
+      return { changed: false, reason: null };
+    }
+
+    const now = new Date();
+
+    const currentBreakStart = safeDate(row.current_break_start);
+    if (currentBreakStart) {
+      const breakLimitAt = new Date(
+        currentBreakStart.getTime() + PAID_BREAK_LIMIT_SECONDS * 1000
+      );
+
+      if (now.getTime() >= breakLimitAt.getTime()) {
+        const result = await clockOutUser({
+          userId,
+          actorUserId: userId,
+          isAuto: true,
+          forcedClockOutAt: breakLimitAt,
+          closeReason: CLOSE_REASON.BREAK_LIMIT_AUTO_CLOSE,
+        });
+
+        return {
+          changed: result.status === 200,
+          reason: CLOSE_REASON.BREAK_LIMIT_AUTO_CLOSE,
+        };
+      }
+    }
+
+    const scheduledEnd = safeDate(row.scheduled_end);
+    const graceAfterMinutes = Number(
+      row.grace_after_minutes ?? DEFAULT_GRACE_AFTER_MINUTES
+    );
+
+    if (scheduledEnd) {
+      const shiftAutoCloseAt = new Date(
+        scheduledEnd.getTime() + graceAfterMinutes * 60 * 1000
+      );
+
+      if (now.getTime() >= shiftAutoCloseAt.getTime()) {
+        const result = await clockOutUser({
+          userId,
+          actorUserId: userId,
+          isAuto: true,
+          forcedClockOutAt: scheduledEnd,
+          closeReason: CLOSE_REASON.AUTO_SHIFT_CLOSE,
+        });
+
+        return {
+          changed: result.status === 200,
+          reason: CLOSE_REASON.AUTO_SHIFT_CLOSE,
+        };
+      }
+    }
+
+    return { changed: false, reason: null };
+  } finally {
+    client.release();
+  }
+}
+
 export async function getTodayAttendanceForUser(userId) {
   const { start, end } = getSystemDayBounds(new Date());
 
@@ -511,6 +657,7 @@ export async function getTodayAttendanceForUser(userId) {
     `WITH base AS (
        SELECT
          a.*,
+         cb.current_break_start,
          CASE
            WHEN a.status IN ('CLOSED', 'AUTO_CLOSED') AND a.clock_out IS NOT NULL
              THEN a.clock_out
@@ -521,6 +668,14 @@ export async function getTodayAttendanceForUser(userId) {
            ELSE a.clock_out
          END AS effective_clock_out
        FROM attendance a
+       LEFT JOIN LATERAL (
+         SELECT br.break_start AS current_break_start
+         FROM breaks br
+         WHERE br.attendance_id = a.id
+           AND br.break_end IS NULL
+         ORDER BY br.id DESC
+         LIMIT 1
+       ) cb ON TRUE
        WHERE a.user_id = $1
          AND (
            (
@@ -559,7 +714,7 @@ export async function getTodayAttendanceForUser(userId) {
                        EXTRACT(
                          EPOCH FROM (
                            LEAST(COALESCE(br.break_end, b.effective_clock_out), b.effective_clock_out)
-                           - br.break_start
+                           - GREATEST(br.break_start, b.clock_in)
                          )
                        )
                      )
@@ -567,7 +722,7 @@ export async function getTodayAttendanceForUser(userId) {
                    FROM breaks br
                    WHERE br.attendance_id = b.id
                      AND br.break_start IS NOT NULL
-                     AND br.break_start < COALESCE(b.effective_clock_out, NOW())
+                     AND GREATEST(br.break_start, b.clock_in) < COALESCE(b.effective_clock_out, NOW())
                  ), 0)
              ) / 3600.0
            )::numeric,
@@ -592,7 +747,7 @@ export async function getTodayAttendanceForUser(userId) {
                            EXTRACT(
                              EPOCH FROM (
                                LEAST(COALESCE(br.break_end, b.effective_clock_out), b.effective_clock_out)
-                               - br.break_start
+                               - GREATEST(br.break_start, b.clock_in)
                              )
                            )
                          )
@@ -600,7 +755,7 @@ export async function getTodayAttendanceForUser(userId) {
                        FROM breaks br
                        WHERE br.attendance_id = b.id
                          AND br.break_start IS NOT NULL
-                         AND br.break_start < COALESCE(b.effective_clock_out, NOW())
+                         AND GREATEST(br.break_start, b.clock_in) < COALESCE(b.effective_clock_out, NOW())
                      ), 0) - $5
                    )
                ) / 3600.0
@@ -619,7 +774,7 @@ export async function getTodayAttendanceForUser(userId) {
                  EXTRACT(
                    EPOCH FROM (
                      LEAST(COALESCE(br.break_end, b.effective_clock_out), b.effective_clock_out)
-                     - br.break_start
+                     - GREATEST(br.break_start, b.clock_in)
                    )
                  )
                )
@@ -627,7 +782,7 @@ export async function getTodayAttendanceForUser(userId) {
              FROM breaks br
              WHERE br.attendance_id = b.id
                AND br.break_start IS NOT NULL
-               AND br.break_start < COALESCE(b.effective_clock_out, NOW())
+               AND GREATEST(br.break_start, b.clock_in) < COALESCE(b.effective_clock_out, NOW())
            ), 0) / 60.0,
            2
          ),
@@ -646,45 +801,24 @@ export async function getTodayAttendanceForUser(userId) {
       ? Number(row.paid_hours ?? 0)
       : Number(row.paid_hours_live ?? 0),
     break_minutes: Number(row.break_minutes ?? 0),
+    current_break_start: row.current_break_start || null,
   }));
 }
 
 export async function autoCloseDueAttendances() {
-  const due = await pool.query(
-    `SELECT
-        a.user_id,
-        a.id AS attendance_id,
-        a.scheduled_end,
-        COALESCE(s.grace_after_minutes, $2) AS grace_after_minutes
-     FROM attendance a
-     LEFT JOIN shifts s ON s.id = a.shift_id
-     WHERE a.status = $1
-       AND a.scheduled_end IS NOT NULL
-       AND NOW() >= (
-         a.scheduled_end
-         + (COALESCE(s.grace_after_minutes, $2) * INTERVAL '1 minute')
-       )
-     ORDER BY a.id ASC`,
-    [ATTENDANCE_STATUS.OPEN, DEFAULT_GRACE_AFTER_MINUTES]
+  const users = await pool.query(
+    `SELECT DISTINCT user_id
+     FROM attendance
+     WHERE status = $1
+     ORDER BY user_id ASC`,
+    [ATTENDANCE_STATUS.OPEN]
   );
 
-  if (due.rows.length > 0) {
-    console.log("AUTO CLOSE DUE COUNT:", due.rows.length);
-  }
-
-  for (const row of due.rows) {
+  for (const row of users.rows) {
     try {
-      await clockOutUser({
-        userId: row.user_id,
-        actorUserId: row.user_id,
-        isAuto: true,
-        forcedClockOutAt: row.scheduled_end,
-      });
-
-      console.log("AUTO CLOSED:", row.attendance_id);
+      await enforceAutoCloseForUser(row.user_id);
     } catch (e) {
-      console.error("AUTO CLOSE FAILED:", {
-        attendanceId: row.attendance_id,
+      console.error("AUTO CLOSE CHECK FAILED:", {
         userId: row.user_id,
         error: e?.message || e,
       });

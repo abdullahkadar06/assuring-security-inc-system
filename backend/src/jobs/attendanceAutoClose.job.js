@@ -17,9 +17,9 @@ export function startAttendanceAutoCloseJob() {
   };
 
   run();
-  timer = setInterval(run, 60 * 1000);
+  timer = setInterval(run, 15 * 1000);
 
-  console.log("🤖 Attendance auto-close job started (every 1 minute)");
+  console.log("🤖 Attendance auto-close job started (every 15 seconds)");
 }
 
 export function stopAttendanceAutoCloseJob() {

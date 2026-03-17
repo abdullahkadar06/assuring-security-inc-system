@@ -51,22 +51,13 @@ export default function CheckInButton() {
 
   const disabled = useMemo(() => {
     if (busy || loadingState) return true;
-
-    if (status === "OPEN") return true;
-    if (status === "CLOSED") return true;
-    if (status === "AUTO_CLOSED") return true;
-
-    return false;
+    return status === "OPEN";
   }, [busy, loadingState, status]);
 
   const text = useMemo(() => {
     if (busy) return "Checking in...";
     if (loadingState) return "Loading...";
-
     if (status === "OPEN") return "Already Checked In";
-    if (status === "CLOSED") return "Shift Closed";
-    if (status === "AUTO_CLOSED") return "Auto Closed";
-
     return "Clock In";
   }, [busy, loadingState, status]);
 

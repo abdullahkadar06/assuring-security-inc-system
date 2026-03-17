@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { requireAuth } from "../middleware/auth.middleware.js";
 import {
+  enforceAutoCloseForUser,
   clockInUser,
   clockOutUser,
   getTodayAttendanceForUser,
@@ -10,6 +11,8 @@ const router = Router();
 
 router.post("/clock-in", requireAuth, async (req, res, next) => {
   try {
+    await enforceAutoCloseForUser(req.user.id);
+
     const result = await clockInUser({
       userId: req.user.id,
       actorUserId: req.user.id,
@@ -23,6 +26,8 @@ router.post("/clock-in", requireAuth, async (req, res, next) => {
 
 router.post("/clock-out", requireAuth, async (req, res, next) => {
   try {
+    await enforceAutoCloseForUser(req.user.id);
+
     const result = await clockOutUser({
       userId: req.user.id,
       actorUserId: req.user.id,
@@ -37,6 +42,7 @@ router.post("/clock-out", requireAuth, async (req, res, next) => {
 
 router.get("/today", requireAuth, async (req, res, next) => {
   try {
+    await enforceAutoCloseForUser(req.user.id);
     const attendance = await getTodayAttendanceForUser(req.user.id);
     return res.json({ attendance });
   } catch (e) {

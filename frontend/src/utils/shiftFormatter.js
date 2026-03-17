@@ -24,9 +24,10 @@ function getShiftKind(source = {}) {
 
 function getNightPolicyRange(date = new Date()) {
   const d = new Date(date);
-  const day = d.getDay();
+  const day = d.getDay(); // 0=Sun ... 6=Sat
   const hour = d.getHours();
 
+  // Saturday night shift
   if (day === 6) {
     return {
       name: "Night Shift",
@@ -35,6 +36,7 @@ function getNightPolicyRange(date = new Date()) {
     };
   }
 
+  // Sunday early morning still belongs to Saturday night
   if (day === 0 && hour < 7) {
     return {
       name: "Night Shift",
@@ -43,6 +45,7 @@ function getNightPolicyRange(date = new Date()) {
     };
   }
 
+  // Sunday night shift
   if (day === 0) {
     return {
       name: "Night Shift",
@@ -51,14 +54,7 @@ function getNightPolicyRange(date = new Date()) {
     };
   }
 
-  if (day === 1 && hour < 8) {
-    return {
-      name: "Night Shift",
-      start: "23:00",
-      end: "08:00",
-    };
-  }
-
+  // Monday-Friday policy
   return {
     name: "Night Shift",
     start: "00:00",

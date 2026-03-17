@@ -3,6 +3,7 @@ import { z } from "zod";
 import { pool } from "../db/pool.js";
 import { requireAuth } from "../middleware/auth.middleware.js";
 import { auditLog } from "../utils/audit.js";
+import { enforceAutoCloseForUser } from "../services/attendanceEngine.service.js";
 
 const router = Router();
 
@@ -44,6 +45,8 @@ async function ensureAttendanceBelongsToUser(attendanceId, userId) {
 
 router.get("/current", requireAuth, async (req, res, next) => {
   try {
+    await enforceAutoCloseForUser(req.user.id);
+
     const attendanceId = await findOpenAttendanceForUser(req.user.id);
 
     if (!attendanceId) {
@@ -74,6 +77,8 @@ router.get("/current", requireAuth, async (req, res, next) => {
 
 router.post("/start", requireAuth, async (req, res, next) => {
   try {
+    await enforceAutoCloseForUser(req.user.id);
+
     const parsed = startSchema.safeParse(req.body ?? {});
     if (!parsed.success) {
       return res.status(400).json({
@@ -147,6 +152,8 @@ router.post("/start", requireAuth, async (req, res, next) => {
 
 router.post("/end", requireAuth, async (req, res, next) => {
   try {
+    await enforceAutoCloseForUser(req.user.id);
+
     const parsed = endSchema.safeParse(req.body ?? {});
     if (!parsed.success) {
       return res.status(400).json({

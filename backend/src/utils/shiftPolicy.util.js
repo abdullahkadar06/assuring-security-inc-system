@@ -21,6 +21,8 @@ function getSystemParts(date = new Date()) {
     year: d.getUTCFullYear(),
     month: d.getUTCMonth() + 1,
     day: d.getUTCDate(),
+    weekday: d.getUTCDay(), // 0=Sun ... 6=Sat
+    hour: d.getUTCHours(),
   };
 }
 
@@ -67,53 +69,110 @@ function parseTimeParts(timeText, fallbackHour = 0, fallbackMinute = 0) {
   };
 }
 
-function buildShiftFromRow(anchorDate, userShift) {
-  const anchor = startOfSystemDay(anchorDate);
-  const parts = getSystemParts(anchor);
+function getShiftKind(userShift = {}) {
+  const code = String(userShift?.code || "").toUpperCase();
+  const name = String(userShift?.name || "").toUpperCase();
+
+  if (code.includes("NIGHT") || name.includes("NIGHT")) {
+    return "NIGHT";
+  }
+
+  if (code.includes("MORNING") || name.includes("MORNING")) {
+    return "MORNING";
+  }
 
   const start = parseTimeParts(userShift?.start_time, 8, 0);
   const end = parseTimeParts(userShift?.end_time, 16, 0);
 
-  const scheduledStart = buildSystemDate(
-    parts.year,
-    parts.month,
-    parts.day,
-    start.hour,
-    start.minute,
-    start.second
-  );
-
-  let scheduledEnd = buildSystemDate(
-    parts.year,
-    parts.month,
-    parts.day,
-    end.hour,
-    end.minute,
-    end.second
-  );
-
-  // cross-midnight shift
-  if (scheduledEnd.getTime() <= scheduledStart.getTime()) {
-    const nextDay = addSystemDays(anchor, 1);
-    const nextParts = getSystemParts(nextDay);
-
-    scheduledEnd = buildSystemDate(
-      nextParts.year,
-      nextParts.month,
-      nextParts.day,
-      end.hour,
-      end.minute,
-      end.second
-    );
+  if (
+    start.hour === 8 &&
+    start.minute === 0 &&
+    end.hour === 16 &&
+    end.minute === 0
+  ) {
+    return "MORNING";
   }
 
+  if (
+    start.hour === 23 ||
+    start.hour === 0 ||
+    end.hour === 7 ||
+    end.hour === 8
+  ) {
+    return "NIGHT";
+  }
+
+  return "MORNING";
+}
+
+function buildMorningShift(anchorDate) {
+  const anchor = startOfSystemDay(anchorDate);
+  const parts = getSystemParts(anchor);
+
   return {
-    shiftCode: String(userShift?.code || "SHIFT"),
-    shiftName: String(userShift?.name || "Shift"),
+    shiftCode: "MORNING",
+    shiftName: "Morning Shift",
     anchorDate: formatSystemDateISO(anchor),
-    scheduledStart,
-    scheduledEnd,
+    scheduledStart: buildSystemDate(parts.year, parts.month, parts.day, 8, 0, 0),
+    scheduledEnd: buildSystemDate(parts.year, parts.month, parts.day, 16, 0, 0),
+    shiftKind: "MORNING",
   };
+}
+
+function buildNightShift(anchorDate) {
+  const anchor = startOfSystemDay(anchorDate);
+  const parts = getSystemParts(anchor);
+
+  // 0=Sun ... 6=Sat
+  // Saturday night: 23:00 -> 07:00
+  if (parts.weekday === 6) {
+    const nextDay = addSystemDays(anchor, 1);
+    const next = getSystemParts(nextDay);
+
+    return {
+      shiftCode: "NIGHT",
+      shiftName: "Night Shift",
+      anchorDate: formatSystemDateISO(anchor),
+      scheduledStart: buildSystemDate(parts.year, parts.month, parts.day, 23, 0, 0),
+      scheduledEnd: buildSystemDate(next.year, next.month, next.day, 7, 0, 0),
+      shiftKind: "NIGHT",
+    };
+  }
+
+  // Sunday night: 23:00 -> next day 08:00
+  if (parts.weekday === 0) {
+    const nextDay = addSystemDays(anchor, 1);
+    const next = getSystemParts(nextDay);
+
+    return {
+      shiftCode: "NIGHT",
+      shiftName: "Night Shift",
+      anchorDate: formatSystemDateISO(anchor),
+      scheduledStart: buildSystemDate(parts.year, parts.month, parts.day, 23, 0, 0),
+      scheduledEnd: buildSystemDate(next.year, next.month, next.day, 8, 0, 0),
+      shiftKind: "NIGHT",
+    };
+  }
+
+  // Monday -> Friday: 00:00 -> 08:00 same day
+  return {
+    shiftCode: "NIGHT",
+    shiftName: "Night Shift",
+    anchorDate: formatSystemDateISO(anchor),
+    scheduledStart: buildSystemDate(parts.year, parts.month, parts.day, 0, 0, 0),
+    scheduledEnd: buildSystemDate(parts.year, parts.month, parts.day, 8, 0, 0),
+    shiftKind: "NIGHT",
+  };
+}
+
+function buildShiftPolicyForAnchorDate(anchorDate, userShift) {
+  const shiftKind = getShiftKind(userShift);
+
+  if (shiftKind === "NIGHT") {
+    return buildNightShift(anchorDate);
+  }
+
+  return buildMorningShift(anchorDate);
 }
 
 function applyGraceWindow(policy, graceBeforeMinutes, graceAfterMinutes) {
@@ -125,11 +184,13 @@ function applyGraceWindow(policy, graceBeforeMinutes, graceAfterMinutes) {
     ? Number(graceAfterMinutes)
     : DEFAULT_GRACE_AFTER_MINUTES;
 
-  const earliestClockIn = new Date(
-    policy.scheduledStart.getTime() - graceBefore * 60_000
-  );
+  // Night shift-ka ha furmin ka hor waqtigiisa saxda ah
+  const earliestClockIn =
+    policy.shiftKind === "NIGHT"
+      ? new Date(policy.scheduledStart)
+      : new Date(policy.scheduledStart.getTime() - graceBefore * 60_000);
 
-  // SAX: clock-in waa la oggol yahay inta shift-ku socdo
+  // Clock-in waa la oggol yahay inta shift-ku socdo
   const latestClockIn = new Date(policy.scheduledEnd.getTime());
 
   const autoCloseAt = new Date(
@@ -155,10 +216,10 @@ export function resolveShiftPolicyForClockIn({
   const today = startOfSystemDay(now);
   const yesterday = addSystemDays(today, -1);
 
-  // yesterday + today si night shift after-midnight uusan u lumin
+  // yesterday + today si Saturday/Sunday night after-midnight uusan u lumin
   const candidates = [
-    buildShiftFromRow(yesterday, userShift),
-    buildShiftFromRow(today, userShift),
+    buildShiftPolicyForAnchorDate(yesterday, userShift),
+    buildShiftPolicyForAnchorDate(today, userShift),
   ];
 
   const withGrace = candidates.map((candidate) =>
@@ -230,8 +291,6 @@ export function calculateLateMinutes({
 
   if (diffMinutes <= 0) return 0;
 
-  // late report ahaan ha qoro daahitaanka oo dhan
-  // deduction logic meel kale ha ka go'do
   return diffMinutes;
 }
 
