@@ -19,7 +19,7 @@ export default function CheckInButton() {
     try {
       setLoadingState(true);
       const d = await dashboardApi.meToday();
-      setTodayRows(d?.today || []);
+      setTodayRows(Array.isArray(d?.today) ? d.today.slice(0, 1) : []);
     } catch (e) {
       showToast(
         e?.response?.data?.message || "Failed loading attendance state",
@@ -47,17 +47,22 @@ export default function CheckInButton() {
   }, [loadToday]);
 
   const latest = useMemo(() => getLatest(todayRows), [todayRows]);
-  const status = latest?.status || "NONE";
+  const status = String(latest?.status || "NONE").toUpperCase();
 
   const disabled = useMemo(() => {
     if (busy || loadingState) return true;
-    return status === "OPEN";
+    if (status === "OPEN") return true;
+    if (status === "CLOSED") return true;
+    if (status === "AUTO_CLOSED") return true;
+    return false;
   }, [busy, loadingState, status]);
 
   const text = useMemo(() => {
     if (busy) return "Checking in...";
     if (loadingState) return "Loading...";
     if (status === "OPEN") return "Already Checked In";
+    if (status === "CLOSED") return "Shift Closed";
+    if (status === "AUTO_CLOSED") return "Auto Closed";
     return "Clock In";
   }, [busy, loadingState, status]);
 
@@ -68,7 +73,6 @@ export default function CheckInButton() {
       setBusy(true);
 
       const res = await attendanceApi.clockIn({});
-
       showToast(res?.message || "Clock-in successful");
 
       window.dispatchEvent(new Event("attendance:changed"));

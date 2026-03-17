@@ -25,17 +25,26 @@ export function formatBreakMinutesPrecise(totalMinutes = 0) {
 
   if (!Number.isFinite(mins) || mins <= 0) return "0s";
 
-  const totalSeconds = Math.floor(mins * 60);
+  const totalSeconds = Math.round(mins * 60);
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
 
-  if (minutes === 0) {
-    return `${seconds}s`;
-  }
+  if (minutes <= 0) return `${seconds}s`;
+  if (seconds <= 0) return `${minutes}m`;
 
-  if (seconds === 0) {
-    return `${minutes}m`;
-  }
+  return `${minutes}m ${seconds}s`;
+}
+
+export function formatBreakSeconds(totalSeconds = 0) {
+  const secs = Math.max(0, Math.floor(Number(totalSeconds || 0)));
+
+  if (!Number.isFinite(secs) || secs <= 0) return "0s";
+
+  const minutes = Math.floor(secs / 60);
+  const seconds = secs % 60;
+
+  if (minutes <= 0) return `${seconds}s`;
+  if (seconds <= 0) return `${minutes}m`;
 
   return `${minutes}m ${seconds}s`;
 }
@@ -73,19 +82,6 @@ export function formatDateTimeCompact(value) {
     day: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
-  });
-}
-
-export function formatClockTime(value) {
-  if (!value) return "—";
-
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return "—";
-
-  return d.toLocaleTimeString([], {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
   });
 }
 

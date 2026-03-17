@@ -19,7 +19,7 @@ export default function CheckOutButton() {
     try {
       setLoadingState(true);
       const d = await dashboardApi.meToday();
-      setTodayRows(d?.today || []);
+      setTodayRows(Array.isArray(d?.today) ? d.today.slice(0, 1) : []);
     } catch (e) {
       showToast(
         e?.response?.data?.message || "Failed loading attendance state",
@@ -47,7 +47,7 @@ export default function CheckOutButton() {
   }, [loadToday]);
 
   const latest = useMemo(() => getLatest(todayRows), [todayRows]);
-  const status = latest?.status || "NONE";
+  const status = String(latest?.status || "NONE").toUpperCase();
 
   const disabled = useMemo(() => {
     if (busy || loadingState) return true;
@@ -70,7 +70,6 @@ export default function CheckOutButton() {
       setBusy(true);
 
       const res = await attendanceApi.clockOut({});
-
       showToast(res?.message || "Clock-out successful");
 
       window.dispatchEvent(new Event("attendance:changed"));

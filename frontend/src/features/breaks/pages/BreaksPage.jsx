@@ -6,32 +6,61 @@ import Loader from "../../../components/ui/Loader";
 import { breaksApi } from "../../../api/breaks.api";
 import { dashboardApi } from "../../../api/dashboard.api";
 import { useUiStore } from "../../../state/ui/ui.store";
-import { useNow } from "../../../hooks/useNow";
-import {
-  formatBreakMinutesPrecise,
-  formatClockTime,
-} from "../../../utils/format";
+import { formatBreakSeconds, toMs } from "../../../utils/format";
 
-function getLatestAttendance(rows = []) {
+function getLatestStatus(rows = []) {
+  return rows?.[0]?.status || "NONE";
+}
+
+function getLatest(rows = []) {
   return rows?.[0] || null;
 }
 
 export default function BreaksPage() {
   const showToast = useUiStore((s) => s.showToast);
-  const now = useNow(1000);
 
   const [busy, setBusy] = useState(false);
   const [loadingState, setLoadingState] = useState(true);
+  const [breakStartISO, setBreakStartISO] = useState(null);
   const [attendanceRows, setAttendanceRows] = useState([]);
-  const [syncedAtMs, setSyncedAtMs] = useState(null);
+  const [nowMs, setNowMs] = useState(Date.now());
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setNowMs(Date.now());
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, []);
 
   const loadCurrentBreakState = useCallback(async () => {
     try {
       setLoadingState(true);
-      const todayRes = await dashboardApi.meToday();
-      setAttendanceRows(Array.isArray(todayRes?.today) ? todayRes.today : []);
-      setSyncedAtMs(Date.now());
+
+      const [breakRes, todayRes] = await Promise.all([
+        breaksApi.current(),
+        dashboardApi.meToday(),
+      ]);
+
+      const latestRows = Array.isArray(todayRes?.today) ? todayRes.today.slice(0, 1) : [];
+      const latest = latestRows[0] || null;
+      const latestStatus = latest?.status || "NONE";
+      const currentBreak = breakRes?.current_break || null;
+
+      setAttendanceRows(latestRows);
+
+      if (
+        latestStatus === "OPEN" &&
+        currentBreak?.break_start &&
+        !currentBreak?.break_end
+      ) {
+        setBreakStartISO(currentBreak.break_start);
+      } else {
+        setBreakStartISO(null);
+      }
     } catch (e) {
+      setBreakStartISO(null);
+      setAttendanceRows([]);
       showToast(
         e?.response?.data?.message || "Failed loading break state",
         "error"
@@ -57,34 +86,41 @@ export default function BreaksPage() {
     };
   }, [loadCurrentBreakState]);
 
-  const latest = useMemo(
-    () => getLatestAttendance(attendanceRows),
+  const latest = useMemo(() => getLatest(attendanceRows), [attendanceRows]);
+  const latestStatus = useMemo(
+    () => getLatestStatus(attendanceRows),
     [attendanceRows]
   );
 
-  const latestStatus = latest?.status || "NONE";
-  const activeBreakStart = latest?.current_break_start || null;
-  const serverBreakMinutes = Number(latest?.break_minutes ?? 0);
-
   const hasOpenAttendance = latestStatus === "OPEN";
-  const isOnBreak = Boolean(hasOpenAttendance && activeBreakStart);
+  const isOnBreak = hasOpenAttendance && Boolean(breakStartISO);
 
-  const breakElapsedMinutes = useMemo(() => {
-    if (!isOnBreak) {
-      return serverBreakMinutes;
+  const breakElapsedSeconds = useMemo(() => {
+    if (!hasOpenAttendance || !breakStartISO) return 0;
+
+    const startedAtMs = toMs(breakStartISO);
+    if (!startedAtMs) return 0;
+
+    const diffSeconds = Math.max(0, Math.floor((nowMs - startedAtMs) / 1000));
+    return diffSeconds;
+  }, [breakStartISO, hasOpenAttendance, nowMs]);
+
+  const breakElapsed = useMemo(() => {
+    if (!isOnBreak) return "0s";
+    return formatBreakSeconds(breakElapsedSeconds);
+  }, [isOnBreak, breakElapsedSeconds]);
+
+  const helperText = useMemo(() => {
+    if (!hasOpenAttendance) return "No open shift found.";
+    if (isOnBreak && breakStartISO) {
+      return `Started at: ${new Date(breakStartISO).toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+      })}`;
     }
-
-    if (!syncedAtMs) {
-      return serverBreakMinutes;
-    }
-
-    const elapsedSinceSyncMs = Math.max(0, now - syncedAtMs);
-    const elapsedSinceSyncMinutes = elapsedSinceSyncMs / 60000;
-
-    return serverBreakMinutes + elapsedSinceSyncMinutes;
-  }, [isOnBreak, serverBreakMinutes, syncedAtMs, now]);
-
-  const breakElapsed = formatBreakMinutesPrecise(breakElapsedMinutes);
+    return "Start a break to begin timer.";
+  }, [hasOpenAttendance, isOnBreak, breakStartISO]);
 
   const startDisabled = useMemo(() => {
     if (busy || loadingState) return true;
@@ -105,8 +141,15 @@ export default function BreaksPage() {
     setBusy(true);
     try {
       const res = await breaksApi.start({});
+      const b = res?.break;
+
+      if (b?.break_start && !b?.break_end) {
+        setBreakStartISO(b.break_start);
+      } else {
+        setBreakStartISO(null);
+      }
+
       showToast(res?.message || "Break started");
-      await loadCurrentBreakState();
       window.dispatchEvent(new Event("break:changed"));
       window.dispatchEvent(new Event("attendance:changed"));
       window.dispatchEvent(new Event("payroll:changed"));
@@ -123,8 +166,8 @@ export default function BreaksPage() {
     setBusy(true);
     try {
       const res = await breaksApi.end({});
+      setBreakStartISO(null);
       showToast(res?.message || "Break ended");
-      await loadCurrentBreakState();
       window.dispatchEvent(new Event("break:changed"));
       window.dispatchEvent(new Event("attendance:changed"));
       window.dispatchEvent(new Event("payroll:changed"));
@@ -164,17 +207,8 @@ export default function BreaksPage() {
         </div>
 
         <div className="rounded-2xl border border-brand-line/70 bg-brand-bg/35 p-4">
-          <div className="text-3xl font-bold leading-tight text-white sm:text-4xl">
-            {breakElapsed}
-          </div>
-
-          <div className="mt-4 text-sm text-brand-text/60">
-            {!hasOpenAttendance
-              ? "No open shift found."
-              : isOnBreak
-                ? `Started at: ${formatClockTime(activeBreakStart)}`
-                : "Start a break to begin timer."}
-          </div>
+          <div className="text-3xl font-bold text-white">{breakElapsed}</div>
+          <div className="mt-2 text-sm text-brand-text/60">{helperText}</div>
         </div>
 
         <div className="grid grid-cols-1 gap-3">
@@ -187,10 +221,10 @@ export default function BreaksPage() {
               {busy && !isOnBreak
                 ? "Starting..."
                 : !hasOpenAttendance
-                  ? "Clock In First"
-                  : isOnBreak
-                    ? "Break Active"
-                    : "Start Break"}
+                ? "Clock In First"
+                : isOnBreak
+                ? "Break Active"
+                : "Start Break"}
             </Button>
           </div>
 
@@ -207,10 +241,10 @@ export default function BreaksPage() {
               {busy && isOnBreak
                 ? "Ending..."
                 : !hasOpenAttendance
-                  ? "No Open Shift"
-                  : !isOnBreak
-                    ? "No Active Break"
-                    : "End Break"}
+                ? "No Open Shift"
+                : !isOnBreak
+                ? "No Active Break"
+                : "End Break"}
             </Button>
           </div>
         </div>

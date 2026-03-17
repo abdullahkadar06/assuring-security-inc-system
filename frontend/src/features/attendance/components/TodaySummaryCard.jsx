@@ -5,10 +5,21 @@ import { dashboardApi } from "../../../api/dashboard.api";
 import { useUiStore } from "../../../state/ui/ui.store";
 import {
   formatBreakMinutesPrecise,
+  formatBreakSeconds,
   formatHours,
   formatDateTimeCompact,
-  formatClockTime,
+  toMs,
 } from "../../../utils/format";
+
+function formatClock(value) {
+  if (!value) return "-";
+
+  return new Date(value).toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+}
 
 function getLatest(rows = []) {
   return rows?.[0] || null;
@@ -20,31 +31,27 @@ function getStatusBadge(status) {
   if (normalized === "AUTO_CLOSED") {
     return {
       label: "Auto Closed",
-      className:
-        "border-brand-blue/30 bg-brand-blue/10 text-brand-blue",
+      className: "border-amber-500/30 bg-amber-500/10 text-amber-300",
     };
   }
 
   if (normalized === "OPEN") {
     return {
       label: "Open",
-      className:
-        "border-emerald-500/30 bg-emerald-500/10 text-emerald-300",
+      className: "border-emerald-500/30 bg-emerald-500/10 text-emerald-300",
     };
   }
 
   if (normalized === "CLOSED") {
     return {
       label: "Closed",
-      className:
-        "border-brand-blue/30 bg-brand-blue/10 text-brand-blue",
+      className: "border-brand-blue/30 bg-brand-blue/10 text-brand-blue",
     };
   }
 
   return {
     label: "None",
-    className:
-      "border-brand-line/70 bg-brand-bg/30 text-brand-text/70",
+    className: "border-brand-line/70 bg-brand-bg/30 text-brand-text/70",
   };
 }
 
@@ -52,6 +59,15 @@ export default function TodaySummaryCard() {
   const showToast = useUiStore((s) => s.showToast);
   const [busy, setBusy] = useState(true);
   const [rows, setRows] = useState([]);
+  const [nowMs, setNowMs] = useState(Date.now());
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setNowMs(Date.now());
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, []);
 
   const loadToday = useCallback(async () => {
     try {
@@ -85,6 +101,21 @@ export default function TodaySummaryCard() {
   const latest = useMemo(() => getLatest(rows), [rows]);
   const statusBadge = useMemo(() => getStatusBadge(latest?.status), [latest?.status]);
 
+  const breakDisplay = useMemo(() => {
+    const isOpen = String(latest?.status || "").toUpperCase() === "OPEN";
+    const currentBreakStart = latest?.current_break_start || null;
+
+    if (isOpen && currentBreakStart) {
+      const startedAtMs = toMs(currentBreakStart);
+      if (!startedAtMs) return "0s";
+
+      const diffSeconds = Math.max(0, Math.floor((nowMs - startedAtMs) / 1000));
+      return formatBreakSeconds(diffSeconds);
+    }
+
+    return formatBreakMinutesPrecise(Number(latest?.break_minutes ?? 0));
+  }, [latest, nowMs]);
+
   if (busy) return <Loader label="Loading today..." />;
 
   return (
@@ -115,14 +146,14 @@ export default function TodaySummaryCard() {
           <div className="rounded-2xl border border-brand-line/60 bg-brand-bg/25 p-3">
             <div className="text-brand-text/60">Clock In</div>
             <div className="mt-1 font-semibold text-white">
-              {formatClockTime(latest.clock_in)}
+              {formatClock(latest.clock_in)}
             </div>
           </div>
 
           <div className="rounded-2xl border border-brand-line/60 bg-brand-bg/25 p-3">
             <div className="text-brand-text/60">Clock Out</div>
             <div className="mt-1 font-semibold text-white">
-              {formatClockTime(latest.clock_out)}
+              {formatClock(latest.clock_out)}
             </div>
           </div>
 
@@ -145,7 +176,7 @@ export default function TodaySummaryCard() {
               <div>
                 <div className="text-brand-text/60">Break Time</div>
                 <div className="mt-1 font-semibold text-white">
-                  {formatBreakMinutesPrecise(latest.break_minutes)}
+                  {breakDisplay}
                 </div>
               </div>
 

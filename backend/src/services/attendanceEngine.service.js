@@ -596,10 +596,15 @@ export async function enforceAutoCloseForUser(userId) {
 
     const now = new Date();
 
-    const currentBreakStart = safeDate(row.current_break_start);
-    if (currentBreakStart) {
+    const clockIn = safeDate(row.clock_in);
+    const breakStart = safeDate(row.current_break_start);
+
+    if (clockIn && breakStart) {
+      const effectiveBreakStart =
+        breakStart.getTime() < clockIn.getTime() ? clockIn : breakStart;
+
       const breakLimitAt = new Date(
-        currentBreakStart.getTime() + PAID_BREAK_LIMIT_SECONDS * 1000
+        effectiveBreakStart.getTime() + PAID_BREAK_LIMIT_SECONDS * 1000
       );
 
       if (now.getTime() >= breakLimitAt.getTime()) {

@@ -10,8 +10,10 @@ import CompactAnalytics from "../components/CompactAnalytics";
 import { formatUserShift } from "../../../utils/shiftFormatter";
 import {
   formatBreakMinutesPrecise,
+  formatBreakSeconds,
   formatHours,
   formatMoney,
+  toMs,
 } from "../../../utils/format";
 import {
   Activity,
@@ -73,6 +75,15 @@ export default function DashboardPage() {
   const [weekly, setWeekly] = useState(null);
   const [adminOverview, setAdminOverview] = useState(null);
   const [adminWeekly, setAdminWeekly] = useState(null);
+  const [nowMs, setNowMs] = useState(Date.now());
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setNowMs(Date.now());
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, []);
 
   const loadDashboardData = useCallback(async () => {
     try {
@@ -135,7 +146,21 @@ export default function DashboardPage() {
   const currentStatus = formatStatusLabel(currentStatusRaw);
 
   const paidHours = Number(latest?.paid_hours ?? 0);
-  const breakTodayMinutes = Number(latest?.break_minutes ?? 0);
+
+  const breakToday = useMemo(() => {
+    const isOpen = String(latest?.status || "").toUpperCase() === "OPEN";
+    const currentBreakStart = latest?.current_break_start || null;
+
+    if (isOpen && currentBreakStart) {
+      const startedAtMs = toMs(currentBreakStart);
+      if (!startedAtMs) return "0s";
+
+      const diffSeconds = Math.max(0, Math.floor((nowMs - startedAtMs) / 1000));
+      return formatBreakSeconds(diffSeconds);
+    }
+
+    return formatBreakMinutesPrecise(Number(latest?.break_minutes ?? 0));
+  }, [latest, nowMs]);
 
   if (busy) {
     return <Loader label="Loading dashboard..." />;
@@ -186,7 +211,7 @@ export default function DashboardPage() {
         <div className="col-span-2">
           <StatCard
             title="Break Today"
-            value={formatBreakMinutesPrecise(breakTodayMinutes)}
+            value={breakToday}
             icon={<Coffee size={20} />}
           />
         </div>
